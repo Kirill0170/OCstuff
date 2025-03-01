@@ -2,7 +2,7 @@ local component = require("component")
 local gpu = component.gpu
 local term=require("term")
 local graph={}
-graph.ver="1.0"
+graph.ver="1.0.2"
 graph.defaultResolution={80,25}
 graph.defaultColorTable={
   0x00FF00, --top values
@@ -85,12 +85,12 @@ function Graph:draw()
     self:plotColumn(i+string.len(tostring(self.maxY)),value) -- Plot each column, offset for the legend
   end
 end
-function Graph:addValue(value)
+function Graph:addValue(value,redraw)
   if #self.data >= 78 then
     table.remove(self.data, 1) -- Remove the oldest value
   end
   table.insert(self.data, value) -- Add the new value
-  self:draw() -- Redraw the graph
+  if redraw then self:draw() end -- Redraw the graph
 end
 function graph.new(name,unit,colors)
   return Graph:new(name,unit,colors)
