@@ -20,7 +20,7 @@ function Color2:new(col1,col2)
   col1=tonumber(col1)
   col2=tonumber(col2)
   if col1 and col2 then
-    if col1>0 and col1<16777216 and col2>0 and col2<16777216 then
+    if col1>=0 and col1<16777216 and col2>=0 and col2<16777216 then
       return setmetatable({col1,col2},Color2)
     end
   end
@@ -47,7 +47,7 @@ function Pos2:new(x,y)
   x=tonumber(x)
   y=tonumber(y)
   if x and y then
-    if x>0 and y>0 and x<161 and y<100 then
+    if x>=0 and y>=0 and x<161 and y<100 then
       local obj=setmetatable({},Pos2)
       obj[1]=x
       obj[2]=y
@@ -127,4 +127,18 @@ function Button:render()
   gpu.set(self.pos2.x,self.pos2.y,self.text)
 end
 
+Bar={}
+Bar.__index=Bar
+function Bar:new(pos2,objects,col2)
+  local obj=setmetatable({},Bar)
+  obj.pos2=pos2 or Pos2:new()
+  obj.col2=col2 or Color2:new()
+  obj.objects=objects or {left="",right=""}
+  return obj
+end
+function Bar:render()
+  local prev=tgl.changeToColor2(self.col2)
+  gpu.fill(self.pos2.x,self.pos2.y,tgl.defaults.screenSizeX,1)
+  
+end
 return tgl
