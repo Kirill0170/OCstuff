@@ -47,7 +47,7 @@ function Pos2:new(x,y)
   x=tonumber(x)
   y=tonumber(y)
   if x and y then
-    if x>=0 and y>=0 and x<161 and y<100 then
+    if x>0 and y>0 and x<161 and y<100 then
       local obj=setmetatable({},Pos2)
       obj[1]=x
       obj[2]=y
