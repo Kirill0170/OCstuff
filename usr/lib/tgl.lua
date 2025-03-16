@@ -70,7 +70,7 @@ function tgl.changeToPos2(pos2,ignore)
 end
 
 Text={}
-Text.__index={}
+Text.__index=Text
 function Text:new(text,col2,pos2)
   local obj=setmetatable({},Text)
   obj.text=text
