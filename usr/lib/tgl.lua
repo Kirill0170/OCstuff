@@ -2,11 +2,13 @@
 local gpu=require("component").gpu
 local thread=require("thread")
 local event=require("event")
+local term=require("term")
 local tgl={}
 tgl.util={}
 tgl.defaults={}
 tgl.defaults.foregroundColor=0xFFFFFF
 tgl.defaults.backgroundColor=0x000000
+tgl.defaults.screenSizeX,tgl.defaults.screenSizeY=gpu.getResolution()
 tgl.ver="0.1"
 tgl.debug=true
 
@@ -23,6 +25,18 @@ function Color2:new(col1,col2)
     end
   end
   return nil
+end
+
+function tgl.changeToColor2(col2,ignore)
+  if not col2 then return false end
+  if not ignore then
+    local old=Color2:new(gpu.getForeground(),gpu.getBackground())
+    gpu.setForeground(col2[1])
+    gpu.setBackground(col2[2])
+    return old
+  end
+  gpu.setForeground(col2[1])
+  gpu.setBackground(col2[2])
 end
 
 Pos2={}
@@ -45,6 +59,40 @@ function Pos2:new(x,y)
   return nil
 end
 
+function tgl.changeToPos2(pos2,ignore)
+  if not pos2 then return false end
+  if not ignore then
+    local old=Pos2:new(term.getCursor())
+    term.setCursor(pos2.x,pos2.y)
+    return old
+  end
+  term.setCursor(pos2.x,pos2.y)
+end
+
+Text={}
+Text.__index={}
+function Text:new(text,col2,pos2)
+  local obj=setmetatable({},Text)
+  obj.text=text
+  obj.col2=col2 or Color2:new()
+  obj.pos2=pos2 or nil
+  return obj
+end
+function Text:render(noNextLine)
+  local prev=tgl.changeToColor2(self.col2)
+  if not self.pos2 then
+    term.write(self.text)
+    tgl.changeToColor2(prev,true)
+    if not noNextLine then term.write("\n") end
+    return true
+  end
+  local prevPos2=tgl.changeToPos2(self.pos2)
+  term.write(self.text)
+  tgl.changeToColor2(prev,true)
+  tgl.changeToPos2(prevPos2,true)
+  return true
+end
+
 Button={}
 Button.__index=Button
 function Button:new(text,callback,pos2,color2)
@@ -64,6 +112,12 @@ function Button:new(text,callback,pos2,color2)
     end
   end
   return obj
+end
+function Button:newPos2(x,y)
+  local newPos2=Pos2:new(x,y)
+  if not newPos2 then return false end
+  self.pos2=newPos2
+  return true
 end
 function Button:enable()
   event.listen("touch",self.handler)
