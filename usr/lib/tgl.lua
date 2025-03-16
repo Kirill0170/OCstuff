@@ -86,10 +86,8 @@ function Text:render(noNextLine)
     if not noNextLine then term.write("\n") end
     return true
   end
-  local prevPos2=tgl.changeToPos2(self.pos2)
-  term.write(self.text)
+  gpu.set(self.pos2.x,self.pos2.y,self.text)
   tgl.changeToColor2(prev,true)
-  tgl.changeToPos2(prevPos2,true)
   return true
 end
 
