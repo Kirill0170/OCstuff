@@ -4,7 +4,7 @@ local thread=require("thread")
 local event=require("event")
 local term=require("term")
 local tgl={}
-tgl.ver="0.2dev"
+tgl.ver="0.3 dev"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -174,6 +174,7 @@ function Bar:new(pos2,objects,col2,objDefaultCol2)
   obj.col2=col2 or Color2:new()
   obj.objectColor2=objDefaultCol2 or nil
   obj.objects=objects or {}
+  obj.space=0
   return obj
 end
 function Bar:render()
@@ -185,7 +186,7 @@ function Bar:render()
     if object.type then
       if not object.customX then
         object:newPos2(startX,self.pos2.y)
-        startX=startX+string.len(object.text)
+        startX=startX+string.len(object.text)+self.space
       else
         object:newPos2(object.customX,self.pos2.y)
       end
@@ -213,4 +214,3 @@ function Bar:disableAll()
   end
 end
 return tgl
---button self
