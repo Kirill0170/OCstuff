@@ -141,7 +141,10 @@ function Button:new(text,callback,pos2,color2)
     if x>=obj.pos2.x
     and x<obj.pos2.x+string.len(obj.text)
     and y==obj.pos2.y then
-      pcall(obj.callback)
+      local success,err=pcall(obj.callback)
+      if not success then
+        tgl.util.log("Button handler error: "..err)
+      end
     end
   end
   return obj
@@ -176,7 +179,6 @@ end
 function Bar:render()
   local startX=self.pos2.x
   tgl.util.log(startX)
-  local endX=tgl.defaults.screenSizeX
   local prev=tgl.changeToColor2(self.col2)
   gpu.fill(self.pos2.x,self.pos2.y,tgl.defaults.screenSizeX,1," ")
   for i,object in pairs(self.objects) do
@@ -184,8 +186,6 @@ function Bar:render()
       if not object.customX then
         object:newPos2(startX,self.pos2.y)
         startX=startX+string.len(object.text)
-        tgl.util.log(string.len(object.text))
-        tgl.util.log(startX)
       else
         object:newPos2(object.customX,self.pos2.y)
       end
@@ -195,6 +195,8 @@ function Bar:render()
       object:render()
     end
   end
+  tgl.changeToColor2(prev,true)
+  return true
 end
 function Bar:enableAll()
   for _,object in pairs(self.objects) do
