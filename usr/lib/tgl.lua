@@ -4,7 +4,7 @@ local thread=require("thread")
 local event=require("event")
 local term=require("term")
 local tgl={}
-tgl.ver="0.3 dev"
+tgl.ver="0.4.4 dev"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -36,6 +36,13 @@ function tgl.util.log(text)
       c.ocelot.log("TGL: "..text)
     end
   end
+end
+function tgl.util.printColors16(noNextLine)
+  for name,col in pairs(tgl.defaults.colors16) do
+    Text:new(name,Color2:new(col)):render(noNextLine)
+    if noNextLine then term.write(" ") end
+  end
+  if noNextLine then term.write("\n") end
 end
 
 tgl.util.log("TGL version "..tgl.ver.." loaded")
@@ -114,8 +121,8 @@ function Size2:newFromPoint(x1,y1,x2,y2)
     obj.y2=y2
     obj.pos1=pos1
     obj.pos2=pos2
-    obj.sizeX=math.abs(x2-x1)
-    obj.sizeY=math.abs(y2-y1)
+    obj.sizeX=math.abs(x2-x1+1)
+    obj.sizeY=math.abs(y2-y1+1)
     return obj
   end
   return nil
@@ -129,8 +136,8 @@ function Size2:newFromPos2(pos1,pos2)
     obj.y2=pos2.y
     obj.pos1=pos1
     obj.pos2=pos2
-    obj.sizeX=math.abs(obj.x2-obj.x1)
-    obj.sizeY=math.abs(obj.y2-obj.y1)
+    obj.sizeX=math.abs(obj.x2-obj.x1+1)
+    obj.sizeY=math.abs(obj.y2-obj.y1+1)
     return obj
   end
   return nil
@@ -152,6 +159,7 @@ function Size2:newFromSize(x,y,sizeX,sizeY)
 end
 
 function tgl.fillSize2(size2,col2,char)
+  if not char then char=" " end
   local prev=tgl.changeToColor2(col2)
   gpu.fill(size2.x1,size2.y1,size2.sizeX,size2.sizeY,char)
   tgl.changeToColor2(prev,true)
@@ -282,7 +290,7 @@ function Bar:render()
           object:newPos2(startX,self.pos2.y)
           startX=startX+string.len(object.text)+self.space
         else
-          object:newPos2(object.customX,self.pos2.y)
+          object:newPos2(self.pos2.x+object.customX-1,self.pos2.y)
         end
         if not object.customCol2 and self.objectColor2 then
           object.col2=self.objectColor2
@@ -311,23 +319,58 @@ end
 
 Frame={}
 Frame.__index=Frame
-function Frame:new(objects,pos2,col2)
+function Frame:new(objects,size2,col2)
   local obj=setmetatable({},Frame)
   obj.objects=objects or {}
+  obj.size2=size2 or Size2:new()
+  obj.col2=col2 or Color2:new()
   --translate objects
-  for _,object in pairs(objects) do
+  obj:translate()
+  return obj
+end
+function Frame:translate() --problem
+  for _,object in pairs(self.objects) do
     if object.type then
       local t_pos2=object.pos2
       if not t_pos2 then error("Corrupted object") end
-      object.pos2=Pos2:new(t_pos2.x+self.pos2.x,t_pos2.y+self.pos2.y)
+      object.pos2=Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1) --offset
       if object.type=="Bar" then
-        
+        if object.pos2.x+object.sizeX>self.size2.sizeX then
+          tgl.util.log("Bar Rescale: "..object.sizeX.." -> "..self.size2.sizeX.." - "..object.pos2.x.." + "..self.size2.x1)
+          object.sizeX=self.size2.sizeX-object.pos2.x+self.size2.x1
+        end
       end
     end
   end
-  obj.pos2=pos2 or Pos2:new()
-  obj.col2=col2 or Color2:new()
-  return obj
+end
+function Frame:render()
+  --frame
+  tgl.fillSize2(self.size2,self.col2)
+  --objects
+  for _,object in pairs(self.objects) do
+    if object.type then
+      object:render()
+    end
+  end
+end
+function Frame:moveToPos2(pos2)
+
+end
+function Frame:enableAll()
+  for _,object in pairs(self.objects) do
+    if object.type then
+      if object.type=="Button" then object:enable() end
+      if object.type=="Bar" then object:enableAll() end
+    end
+  end
+end
+function Frame:disableAll()
+  for _,object in pairs(self.objects) do
+    if object.type then
+      if object.type=="Button" then object:disable() end
+      if object.type=="Bar" then object:disableAll() end
+    end
+  end
 end
 return tgl
 --errors
