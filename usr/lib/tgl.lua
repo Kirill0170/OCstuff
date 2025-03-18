@@ -29,7 +29,6 @@ tgl.defaults.colors16["darkgreen"]=0x336600 --darkgreen
 tgl.defaults.colors16["red"]=0xFF3333 --red
 tgl.defaults.colors16["black"]=0x000000 --black
 
-
 function tgl.util.log(text)
   if tgl.debug then
     local c=require("component")
@@ -38,6 +37,8 @@ function tgl.util.log(text)
     end
   end
 end
+
+tgl.util.log("TGL version "..tgl.ver.." loaded")
 
 Color2={}
 Color2.__index=Color2
@@ -96,6 +97,66 @@ function tgl.changeToPos2(pos2,ignore)
   term.setCursor(pos2.x,pos2.y)
 end
 
+Size2={}
+Size2.__index=Size2
+function Size2:newFromPoint(x1,y1,x2,y2)
+  if not x1 then x1=1 end
+  if not y1 then y1=1 end
+  if not x2 then x2=10 end
+  if not y2 then y2=10 end
+  local pos1=Pos2:new(x1,y1)
+  local pos2=Pos2:new(x2,y2)
+  if pos1 and pos2 then
+    local obj=setmetatable({},Size2)
+    obj.x1=x1
+    obj.y1=y1
+    obj.x2=x2
+    obj.y2=y2
+    obj.pos1=pos1
+    obj.pos2=pos2
+    obj.sizeX=math.abs(x2-x1)
+    obj.sizeY=math.abs(y2-y1)
+    return obj
+  end
+  return nil
+end
+function Size2:newFromPos2(pos1,pos2)
+  if pos1 and pos2 then
+    local obj=setmetatable({},Size2)
+    obj.x1=pos1.x
+    obj.y1=pos1.y
+    obj.x2=pos2.x
+    obj.y2=pos2.y
+    obj.pos1=pos1
+    obj.pos2=pos2
+    obj.sizeX=math.abs(obj.x2-obj.x1)
+    obj.sizeY=math.abs(obj.y2-obj.y1)
+    return obj
+  end
+  return nil
+end
+function Size2:newFromSize(x,y,sizeX,sizeY)
+  local pos1=Pos2:new(x,y)
+  if pos1 and tonumber(sizeX) and tonumber(sizeY) then
+    local obj=setmetatable({},Size2)
+    obj.x1=x
+    obj.y1=y
+    obj.x2=x+sizeX
+    obj.y2=y+sizeY
+    obj.sizeX=sizeX
+    obj.sizeY=sizeY
+    obj.pos1=pos1
+    obj.pos2=Pos2:new(obj.x2,obj.y2)
+    return obj
+  end
+end
+
+function tgl.fillSize2(size2,col2,char)
+  local prev=tgl.changeToColor2(col2)
+  gpu.fill(size2.x1,size2.y1,size2.sizeX,size2.sizeY,char)
+  tgl.changeToColor2(prev,true)
+end
+
 Text={}
 Text.__index=Text
 function Text:new(text,col2,pos2)
@@ -136,16 +197,28 @@ function Button:new(text,callback,pos2,color2)
   end
   obj.callback=callback
   obj.pos2=pos2 or Pos2:new()
-  obj.color2=color2 or Color2:new()
+  obj.col2=color2 or Color2:new()
   obj.handler=function (_,_,x,y)
     if x>=obj.pos2.x
     and x<obj.pos2.x+string.len(obj.text)
     and y==obj.pos2.y then
+      thread.create(obj.onClick):detach()
       local success,err=pcall(obj.callback)
       if not success then
         tgl.util.log("Button handler error: "..err)
       end
     end
+  end
+  obj.onClick=function()
+    obj:disable()
+    local invert=Color2:new(obj.col2[2],obj.col2[1])
+    local prev=obj.col2
+    obj.col2=invert
+    obj:render()
+    obj.col2=prev
+    os.sleep(0.5)
+    obj:render()
+    obj:enable()
   end
   return obj
 end
@@ -162,7 +235,9 @@ function Button:disable()
   event.ignore("touch",self.handler)
 end
 function Button:render()
+  local prev=tgl.changeToColor2(self.col2)
   gpu.set(self.pos2.x,self.pos2.y,self.text)
+  tgl.changeToColor2(prev,true)
 end
 
 Bar={}
@@ -175,25 +250,45 @@ function Bar:new(pos2,objects,col2,objDefaultCol2)
   obj.objectColor2=objDefaultCol2 or nil
   obj.objects=objects or {}
   obj.space=0
+  obj.sizeX=tgl.defaults.screenSizeX
+  obj.centerMode=false
   return obj
 end
 function Bar:render()
-  local startX=self.pos2.x
-  tgl.util.log(startX)
   local prev=tgl.changeToColor2(self.col2)
-  gpu.fill(self.pos2.x,self.pos2.y,tgl.defaults.screenSizeX,1," ")
-  for i,object in pairs(self.objects) do
+  gpu.fill(self.pos2.x,self.pos2.y,self.sizeX,1," ")
+  if self.centerMode then
+    local object=self.objects[1]
     if object.type then
-      if not object.customX then
-        object:newPos2(startX,self.pos2.y)
-        startX=startX+string.len(object.text)+self.space
-      else
-        object:newPos2(object.customX,self.pos2.y)
-      end
+      local len=string.len(object.text)
+      local startX=self.pos2.x+(self.sizeX-len)/2
+      tgl.util.log("Bar start X:"..startX)
+      object:newPos2(startX,self.pos2.y)
       if not object.customCol2 and self.objectColor2 then
         object.col2=self.objectColor2
       end
       object:render()
+    end
+  else
+    local startX=self.pos2.x
+    tgl.util.log("Bar start X:"..startX)
+    for _,object in pairs(self.objects) do
+      if startX>self.pos2.x+self.sizeX then
+        tgl.util.log("Bar: out of bounds: "..startX)
+        break
+      end
+      if object.type then
+        if not object.customX then
+          object:newPos2(startX,self.pos2.y)
+          startX=startX+string.len(object.text)+self.space
+        else
+          object:newPos2(object.customX,self.pos2.y)
+        end
+        if not object.customCol2 and self.objectColor2 then
+          object.col2=self.objectColor2
+        end
+        object:render()
+      end
     end
   end
   tgl.changeToColor2(prev,true)
@@ -213,4 +308,26 @@ function Bar:disableAll()
     end
   end
 end
+
+Frame={}
+Frame.__index=Frame
+function Frame:new(objects,pos2,col2)
+  local obj=setmetatable({},Frame)
+  obj.objects=objects or {}
+  --translate objects
+  for _,object in pairs(objects) do
+    if object.type then
+      local t_pos2=object.pos2
+      if not t_pos2 then error("Corrupted object") end
+      object.pos2=Pos2:new(t_pos2.x+self.pos2.x,t_pos2.y+self.pos2.y)
+      if object.type=="Bar" then
+        
+      end
+    end
+  end
+  obj.pos2=pos2 or Pos2:new()
+  obj.col2=col2 or Color2:new()
+  return obj
+end
 return tgl
+--errors
