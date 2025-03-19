@@ -450,8 +450,8 @@ function tgl.window(size2,title,barcol,framecol)
   close_button.customX=size2.sizeX-2
   local title_text=Text:new(title,barcol)
   title_text.customX=(size2.sizeX-string.len(title))/2
-  local topbar=Bar:new(Pos2:new(1,1),{title_text,close_button},barcol,barcol)
-  local frame=Frame:new({topbar},size2,framecol)
+  local topbar=Bar:new(Pos2:new(1,1),{title_text=title_text,close_button=close_button},barcol,barcol)
+  local frame=Frame:new({topbar=topbar},size2,framecol)
   return frame
 end
 return tgl
