@@ -4,7 +4,7 @@ local thread=require("thread")
 local event=require("event")
 local term=require("term")
 local tgl={}
-tgl.ver="0.5.2 dev"
+tgl.ver="0.5.3"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -61,6 +61,11 @@ function Color2:new(col1,col2)
   end
   return nil
 end
+
+tgl.defaults.colors2={}
+tgl.defaults.colors2.openos=Color2:new(0xFFFFFF,0)
+tgl.defaults.colors2.white=Color2:new(0,0xFFFFFF)
+tgl.defaults.colors2.close=Color2:new(0xFFFFFF,0xFF0000)
 
 function tgl.changeToColor2(col2,ignore)
   if not col2 then return false end
@@ -212,7 +217,7 @@ function Button:new(text,callback,pos2,color2)
   obj.type="Button"
   obj.text=text or "[New Button]"
   if type(callback)~="function" then
-  	callback=function() if tgl.debug then print("[DEBUG]Empty button!") end end
+  	callback=function() tgl.util.log("Empty Button!!") end
   end
   obj.callback=callback
   obj.pos2=pos2 or Pos2:new()
@@ -421,6 +426,33 @@ function Frame:disableAll()
       if object.type=="Bar" then object:disableAll() end
     end
   end
+end
+function Frame:add(object,name)
+  if object.type then
+    if not name then
+      table.insert(self.objects,object)
+    else
+      self.objects[name]=object
+    end
+    self:translate()
+    return true
+  end
+  return false
+end
+
+function tgl.window(size2,title,barcol,framecol)
+  if not size2 then return nil end
+  if not title then title="Untitled" end
+  if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
+  if not framecol then framecol=tgl.defaults.colors2.white end
+  local close_button=Button:new("[X]",function() event.push("close"..title) end,Pos2:new(size2.sizeX-3,1),tgl.defaults.colors2.close)
+  close_button.customCol2=true
+  close_button.customX=size2.sizeX-2
+  local title_text=Text:new(title,barcol)
+  title_text.customX=(size2.sizeX-string.len(title))/2
+  local topbar=Bar:new(Pos2:new(1,1),{title_text,close_button},barcol,barcol)
+  local frame=Frame:new({topbar},size2,framecol)
+  return frame
 end
 return tgl
 --errors
