@@ -157,6 +157,16 @@ function Size2:newFromSize(x,y,sizeX,sizeY)
     return obj
   end
 end
+function Size2:moveToPos2(pos2)
+  if not pos2 then return false end
+  self.x1=pos2.x
+  self.y1=pos2.y
+  self.x2=self.x1+self.sizeX
+  self.y2=self.y1+self.sizeY
+  self.pos1=pos2
+  self.pos2=Pos2:new(self.x2,self.y2)
+  return true
+end
 
 function tgl.fillSize2(size2,col2,char)
   if not char then char=" " end
@@ -331,7 +341,8 @@ end
 function Frame:translate() --problem
   for _,object in pairs(self.objects) do
     if object.type then
-      local t_pos2=object.pos2
+      if not object.relpos2 then object.relpos2=object.pos2 end
+      local t_pos2=object.relpos2
       if not t_pos2 then error("Corrupted object") end
       object.pos2=Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1) --offset
       if object.type=="Bar" then
@@ -354,7 +365,9 @@ function Frame:render()
   end
 end
 function Frame:moveToPos2(pos2)
-
+  if not pos2 then return false end
+  self.size2:moveToPos2(pos2)
+  self:translate()
 end
 function Frame:enableAll()
   for _,object in pairs(self.objects) do
