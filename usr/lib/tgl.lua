@@ -4,7 +4,7 @@ local thread=require("thread")
 local event=require("event")
 local term=require("term")
 local tgl={}
-tgl.ver="0.4.4 dev"
+tgl.ver="0.5.2 dev"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -94,14 +94,15 @@ function Pos2:new(x,y)
   return nil
 end
 
-function tgl.changeToPos2(pos2,ignore)
+function tgl.changeToPos2(pos2,ignore,offsetX)
   if not pos2 then return false end
+  if not offsetX then offsetX=0 end
   if not ignore then
     local old=Pos2:new(term.getCursor())
-    term.setCursor(pos2.x,pos2.y)
+    term.setCursor(pos2.x+offsetX,pos2.y)
     return old
   end
-  term.setCursor(pos2.x,pos2.y)
+  term.setCursor(pos2.x+offsetX,pos2.y)
 end
 
 Size2={}
@@ -258,6 +259,42 @@ function Button:render()
   tgl.changeToColor2(prev,true)
 end
 
+InputField={}
+InputField.__index=InputField
+function InputField:new(text,pos2,col2)
+  local obj=setmetatable({},InputField)
+  obj.type="InputField"
+  obj.text=text or "[______]"
+  obj.pos2=pos2 or Pos2:new()
+  obj.col2=col2 or Color2:new()
+  obj.value=""
+  obj.eventName="defaultInputEvent"
+  obj.handler=function (_,_,x,y)
+    if x>=obj.pos2.x
+    and x<obj.pos2.x+string.len(obj.text)
+    and y==obj.pos2.y then
+      obj:disable()
+      local prev=tgl.changeToPos2(obj.pos2,false,1)
+      obj.value=io.read()
+      event.push(obj.eventName,obj.value)
+      obj:enable()
+      tgl.changeToPos2(prev,true)
+    end
+  end
+  return obj
+end
+function InputField:render()
+  local prev=tgl.changeToColor2(self.col2)
+  gpu.set(self.pos2.x,self.pos2.y,self.text)
+  tgl.changeToColor2(prev,true)
+end
+function InputField:enable()
+  event.listen("touch",self.handler)
+end
+function InputField:disable()
+  event.ignore("touch",self.handler)
+end
+
 Bar={}
 Bar.__index=Bar
 function Bar:new(pos2,objects,col2,objDefaultCol2)
@@ -315,14 +352,14 @@ end
 function Bar:enableAll()
   for _,object in pairs(self.objects) do
     if object.type then
-      if object.type=="Button" then object:enable() end
+      if object.type=="Button" or object.type=="InputField" then object:enable() end
     end
   end
 end
 function Bar:disableAll()
   for _,object in pairs(self.objects) do
     if object.type then
-      if object.type=="Button" then object:disable() end
+      if object.type=="Button" or object.type=="InputField" then object:disable() end
     end
   end
 end
@@ -338,7 +375,7 @@ function Frame:new(objects,size2,col2)
   obj:translate()
   return obj
 end
-function Frame:translate() --problem
+function Frame:translate()
   for _,object in pairs(self.objects) do
     if object.type then
       if not object.relpos2 then object.relpos2=object.pos2 end
@@ -372,7 +409,7 @@ end
 function Frame:enableAll()
   for _,object in pairs(self.objects) do
     if object.type then
-      if object.type=="Button" then object:enable() end
+      if object.type=="Button" or object.type=="InputField" then object:enable() end
       if object.type=="Bar" then object:enableAll() end
     end
   end
@@ -380,7 +417,7 @@ end
 function Frame:disableAll()
   for _,object in pairs(self.objects) do
     if object.type then
-      if object.type=="Button" then object:disable() end
+      if object.type=="Button" or object.type=="InputField" then object:disable() end
       if object.type=="Bar" then object:disableAll() end
     end
   end
