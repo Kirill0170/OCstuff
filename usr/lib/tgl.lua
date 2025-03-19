@@ -4,7 +4,7 @@ local thread=require("thread")
 local event=require("event")
 local term=require("term")
 local tgl={}
-tgl.ver="0.5.3"
+tgl.ver="0.5.4"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -28,6 +28,9 @@ tgl.defaults.colors16["brown"]=0x663300 --brown
 tgl.defaults.colors16["darkgreen"]=0x336600 --darkgreen
 tgl.defaults.colors16["red"]=0xFF3333 --red
 tgl.defaults.colors16["black"]=0x000000 --black
+
+tgl.defaults.chars={}
+tgl.defaults.chars.full="█"
 
 function tgl.util.log(text)
   if tgl.debug then
