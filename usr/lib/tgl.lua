@@ -280,10 +280,12 @@ function InputField:new(text,pos2,col2)
     and y==obj.pos2.y then
       obj:disable()
       local prev=tgl.changeToPos2(obj.pos2,false,1)
+      local prevCol=tgl.changeToColor2(self.col2)
       obj.value=io.read()
       event.push(obj.eventName,obj.value)
       obj:enable()
       tgl.changeToPos2(prev,true)
+      tgl.changeToColor2(prevCol,true)
     end
   end
   return obj
