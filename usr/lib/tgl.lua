@@ -4,7 +4,7 @@ local thread=require("thread")
 local event=require("event")
 local term=require("term")
 local tgl={}
-tgl.ver="0.5.4"
+tgl.ver="0.5.5"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -31,6 +31,16 @@ tgl.defaults.colors16["black"]=0x000000 --black
 
 tgl.defaults.chars={}
 tgl.defaults.chars.full="█"
+tgl.defaults.chars.darkshade="▓"
+tgl.defaults.chars.mediumshade="▒"
+tgl.defaults.chars.lightshade="░"
+tgl.defaults.chars.sqrt="√"
+tgl.defaults.chars.check="✔"
+
+tgl.defaults.boxes={}
+tgl.defaults.boxes.double="═║╔╗╚╝╠╣╦╩╬"
+tgl.defaults.boxes.signle="─│┌┐└┘├┤┬┴┼"
+tgl.defaults.boxes.round= "─│╭╮╰╯├┤┬┴┼"
 
 function tgl.util.log(text)
   if tgl.debug then
@@ -195,6 +205,7 @@ function Text:new(text,col2,pos2)
   return obj
 end
 function Text:render(noNextLine)
+  if self.hidden then return false end
   local prev=tgl.changeToColor2(self.col2)
   if not self.pos2 then
     term.write(self.text)
@@ -262,6 +273,7 @@ function Button:disable()
   event.ignore("touch",self.handler)
 end
 function Button:render()
+  if self.hidden then return false end
   local prev=tgl.changeToColor2(self.col2)
   gpu.set(self.pos2.x,self.pos2.y,self.text)
   tgl.changeToColor2(prev,true)
@@ -294,6 +306,7 @@ function InputField:new(text,pos2,col2)
   return obj
 end
 function InputField:render()
+  if self.hidden then return false end
   local prev=tgl.changeToColor2(self.col2)
   gpu.set(self.pos2.x,self.pos2.y,self.text)
   tgl.changeToColor2(prev,true)
@@ -320,6 +333,7 @@ function Bar:new(pos2,objects,col2,objDefaultCol2)
   return obj
 end
 function Bar:render()
+  if self.hidden then return false end
   local prev=tgl.changeToColor2(self.col2)
   gpu.fill(self.pos2.x,self.pos2.y,self.sizeX,1," ")
   if self.centerMode then
@@ -402,6 +416,7 @@ function Frame:translate()
   end
 end
 function Frame:render()
+  if self.hidden then return false end
   --frame
   tgl.fillSize2(self.size2,self.col2)
   --objects
