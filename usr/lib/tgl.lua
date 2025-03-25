@@ -3,8 +3,9 @@ local gpu=require("component").gpu
 local thread=require("thread")
 local event=require("event")
 local term=require("term")
+local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.5.5"
+tgl.ver="0.5.6"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -42,11 +43,12 @@ tgl.defaults.boxes.double="═║╔╗╚╝╠╣╦╩╬"
 tgl.defaults.boxes.signle="─│┌┐└┘├┤┬┴┼"
 tgl.defaults.boxes.round= "─│╭╮╰╯├┤┬┴┼"
 
-function tgl.util.log(text)
+function tgl.util.log(text,mod)
   if tgl.debug then
     local c=require("component")
     if c.ocelot then
-      c.ocelot.log("TGL: "..text)
+      if not mod then mod="MAIN" end
+      c.ocelot.log("["..require("computer").uptime().."][TGL]["..mod.."] "..text)
     end
   end
 end
@@ -76,7 +78,7 @@ function Color2:new(col1,col2)
 end
 
 tgl.defaults.colors2={}
-tgl.defaults.colors2.openos=Color2:new(0xFFFFFF,0)
+tgl.defaults.colors2.black=Color2:new(0xFFFFFF,0)
 tgl.defaults.colors2.white=Color2:new(0,0xFFFFFF)
 tgl.defaults.colors2.close=Color2:new(0xFFFFFF,0xFF0000)
 
@@ -167,8 +169,8 @@ function Size2:newFromSize(x,y,sizeX,sizeY)
     local obj=setmetatable({},Size2)
     obj.x1=x
     obj.y1=y
-    obj.x2=x+sizeX
-    obj.y2=y+sizeY
+    obj.x2=x+sizeX-1
+    obj.y2=y+sizeY-1
     obj.sizeX=sizeX
     obj.sizeY=sizeY
     obj.pos1=pos1
@@ -231,7 +233,7 @@ function Button:new(text,callback,pos2,color2)
   obj.type="Button"
   obj.text=text or "[New Button]"
   if type(callback)~="function" then
-  	callback=function() tgl.util.log("Empty Button!!") end
+  	callback=function() tgl.util.log("Empty Button!","Button/callback") end
   end
   obj.callback=callback
   obj.pos2=pos2 or Pos2:new()
@@ -243,7 +245,7 @@ function Button:new(text,callback,pos2,color2)
       thread.create(obj.onClick):detach()
       local success,err=pcall(obj.callback)
       if not success then
-        tgl.util.log("Button handler error: "..err)
+        tgl.util.log("Button handler error: "..err,"Button/handler")
       end
     end
   end
@@ -341,7 +343,7 @@ function Bar:render()
     if object.type then
       local len=string.len(object.text)
       local startX=self.pos2.x+(self.sizeX-len)/2
-      tgl.util.log("Bar start X:"..startX)
+      tgl.util.log("Bar start X:"..startX,"Bar/render")
       object:newPos2(startX,self.pos2.y)
       if not object.customCol2 and self.objectColor2 then
         object.col2=self.objectColor2
@@ -350,10 +352,10 @@ function Bar:render()
     end
   else
     local startX=self.pos2.x
-    tgl.util.log("Bar start X:"..startX)
+    tgl.util.log("Bar start X:"..startX,"Bar/render")
     for _,object in pairs(self.objects) do
       if startX>self.pos2.x+self.sizeX then
-        tgl.util.log("Bar: out of bounds: "..startX)
+        tgl.util.log("Bar: out of bounds: "..startX,"Bar/render")
         break
       end
       if object.type then
@@ -395,6 +397,7 @@ function Frame:new(objects,size2,col2)
   obj.objects=objects or {}
   obj.size2=size2 or Size2:new()
   obj.col2=col2 or Color2:new()
+  obj.borderType="outline"
   --translate objects
   obj:translate()
   return obj
@@ -404,13 +407,17 @@ function Frame:translate()
     if object.type then
       if not object.relpos2 then object.relpos2=object.pos2 end
       local t_pos2=object.relpos2
-      if not t_pos2 then error("Corrupted object") end
-      object.pos2=Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1) --offset
-      if object.type=="Bar" then
-        if object.pos2.x+object.sizeX>self.size2.sizeX then
-          tgl.util.log("Bar Rescale: "..object.sizeX.." -> "..self.size2.sizeX.." - "..object.pos2.x.." + "..self.size2.x1)
-          object.sizeX=self.size2.sizeX-object.pos2.x+self.size2.x1
+      if t_pos2 then
+      
+        object.pos2=Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1) --offset
+        if object.type=="Bar" then
+          if object.pos2.x+object.sizeX>self.size2.sizeX then
+            --tgl.util.log("Bar Rescale: "..object.sizeX.." -> "..self.size2.sizeX.." - "..object.pos2.x.." + "..self.size2.x1,"Frame/translate:Bar")
+            object.sizeX=self.size2.sizeX-object.pos2.x+self.size2.x1
+          end
         end
+      else
+        tgl.util.log("Corrupted object! Type: "..tostring(object.type),"Frame/translate")
       end
     end
   end
@@ -419,6 +426,49 @@ function Frame:render()
   if self.hidden then return false end
   --frame
   tgl.fillSize2(self.size2,self.col2)
+  --border
+  if type(self.borders)=="string" and string.len(self.borders)>=6 then
+    if not self.borderType then self.borderType="outline" end
+    if self.borderType=="outline" then
+      local horizontal=unicode.sub(self.borders,1,1)
+      local vertical=unicode.sub(self.borders,2,2)
+      local right_top=unicode.sub(self.borders,4,4)
+      local left_bottom=unicode.sub(self.borders,5,5)
+      local right_bottom=unicode.sub(self.borders,6,6)
+      gpu.set(self.size2.x1+1,self.size2.y2+1,left_bottom)
+      gpu.set(self.size2.x2+1,self.size2.y1,right_top)
+      gpu.set(self.size2.x2+1,self.size2.y2+1,right_bottom)
+      for i=self.size2.x1+2,self.size2.x2 do
+        gpu.set(i,self.size2.y2+1,horizontal)
+      end
+      for i=self.size2.y1+1,self.size2.y2 do
+        gpu.set(self.size2.x2+1,i,vertical)
+      end
+    elseif self.borderType=="inline" then
+      local horizontal=unicode.sub(self.borders,1,1)
+      local vertical=unicode.sub(self.borders,2,2)
+      local left_top=unicode.sub(self.borders,3,3)
+      local right_top=unicode.sub(self.borders,4,4)
+      local left_bottom=unicode.sub(self.borders,5,5)
+      local right_bottom=unicode.sub(self.borders,6,6)
+      local prev=tgl.changeToColor2(self.col2)
+      for i=self.size2.x1+1,self.size2.x2-1 do
+        gpu.set(i,self.size2.y1,horizontal)
+        gpu.set(i,self.size2.y2,horizontal)
+      end
+      for i=self.size2.y1+1,self.size2.y2-1 do
+        gpu.set(self.size2.x1,i,vertical)
+        gpu.set(self.size2.x2,i,vertical)
+      end
+      gpu.set(self.size2.x1,self.size2.y1,left_top)
+      gpu.set(self.size2.x1,self.size2.y2,left_bottom)
+      gpu.set(self.size2.x2,self.size2.y1,right_top)
+      gpu.set(self.size2.x2,self.size2.y2,right_bottom)
+      tgl.changeToColor2(prev,true)
+    else
+      tgl.util.log("Invalid border type: "..tostring(self.borderType),"Frame/render/borders")
+    end
+  end
   --objects
   for _,object in pairs(self.objects) do
     if object.type then
@@ -459,19 +509,43 @@ function Frame:add(object,name)
   end
   return false
 end
+function Frame:remove(elem)
+  if tonumber(elem) then
+    table.remove(self.objects,tonumber(elem))
+  else
+    self.objects[elem]=nil
+  end
+end
+
 
 function tgl.window(size2,title,barcol,framecol)
   if not size2 then return nil end
   if not title then title="Untitled" end
   if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
   if not framecol then framecol=tgl.defaults.colors2.white end
-  local close_button=Button:new("[X]",function() event.push("close"..title) end,Pos2:new(size2.sizeX-3,1),tgl.defaults.colors2.close)
+  local close_button=Button:new(" X ",function() event.push("close"..title) end,Pos2:new(),tgl.defaults.colors2.close)
   close_button.customCol2=true
   close_button.customX=size2.sizeX-2
   local title_text=Text:new(title,barcol)
   title_text.customX=(size2.sizeX-string.len(title))/2
   local topbar=Bar:new(Pos2:new(1,1),{title_text=title_text,close_button=close_button},barcol,barcol)
   local frame=Frame:new({topbar=topbar},size2,framecol)
+  return frame
+end
+function tgl.window_outlined(size2,title,borders,barcol,framecol)
+  if not size2 then return nil end
+  if not title then title="Untitled" end
+  if not borders then borders=tgl.defaults.boxes.signle end
+  if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
+  if not framecol then framecol=tgl.defaults.colors2.white end
+  local close_button=Button:new(" X ",function() event.push("close"..title) end,Pos2:new(),tgl.defaults.colors2.close)
+  close_button.customCol2=true
+  close_button.customX=size2.sizeX-3
+  local title_text=Text:new(title,barcol)
+  title_text.customX=(size2.sizeX-string.len(title))/2
+  local topbar=Bar:new(Pos2:new(1,1),{title_text=title_text,close_button=close_button},barcol,barcol)
+  local frame=Frame:new({topbar=topbar},size2,framecol)
+  frame.borders=borders
   return frame
 end
 return tgl
