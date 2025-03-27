@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.5.6"
+tgl.ver="0.5.7"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -408,7 +408,6 @@ function Frame:translate()
       if not object.relpos2 then object.relpos2=object.pos2 end
       local t_pos2=object.relpos2
       if t_pos2 then
-      
         object.pos2=Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1) --offset
         if object.type=="Bar" then
           if object.pos2.x+object.sizeX>self.size2.sizeX then
@@ -517,6 +516,35 @@ function Frame:remove(elem)
   end
 end
 
+ScreenSave={}
+ScreenSave.__index=ScreenSave
+function ScreenSave:save()
+  for x=self.size2.x1,self.size2.x2 do
+    self.data[x]={}
+    for y=self.size2.y1,self.size2.y2 do
+      local char,fgcol,bgcol=gpu.get(x,y)
+      self.data[x][y]={char,fgcol,bgcol}
+    end
+  end
+end
+function ScreenSave:new(size2)
+  if not size2 then size2=Size2:newFromPoint(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY) end
+  local obj=setmetatable({},ScreenSave)
+  obj.size2=size2
+  obj.data={}
+  obj:save()
+  return obj
+end
+function ScreenSave:render()
+  for x=self.size2.x1,self.size2.x2 do
+    for y=self.size2.y1,self.size2.y2 do
+      if not self.data[x][y] then return false end
+      gpu.setForeground(self.data[x][y][2])
+      gpu.setBackground(self.data[x][y][3])
+      gpu.set(x,y,self.data[x][y][1])
+    end
+  end
+end
 
 function tgl.window(size2,title,barcol,framecol)
   if not size2 then return nil end
@@ -540,12 +568,26 @@ function tgl.window_outlined(size2,title,borders,barcol,framecol)
   if not framecol then framecol=tgl.defaults.colors2.white end
   local close_button=Button:new(" X ",function() event.push("close"..title) end,Pos2:new(),tgl.defaults.colors2.close)
   close_button.customCol2=true
-  close_button.customX=size2.sizeX-3
+  close_button.customX=size2.sizeX-2
   local title_text=Text:new(title,barcol)
   title_text.customX=(size2.sizeX-string.len(title))/2
   local topbar=Bar:new(Pos2:new(1,1),{title_text=title_text,close_button=close_button},barcol,barcol)
   local frame=Frame:new({topbar=topbar},size2,framecol)
   frame.borders=borders
+  return frame
+end
+function tgl.notificationWindow(size2,title,text,barcol,framecol)
+  if not size2 then return nil end
+  if not title then title="Untitled" end
+  if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
+  if not framecol then framecol=tgl.defaults.colors2.white end
+  local close_button=Button:new(" OK ",function() event.push("close"..title) end,Pos2:new((size2.sizeX-4)/2,size2.sizeY-1),Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue))
+  local info_icon=Text:new("i",Color2:new(0xFFFFFF,tgl.defaults.colors16.darkblue),Pos2:new((size2.sizeX-unicode.len(text))/2-2,3))
+  local text_label=Text:new(text,framecol,Pos2:new((size2.sizeX-unicode.len(text))/2,3))
+  local title_text=Text:new(title,barcol)
+  title_text.customX=(size2.sizeX-string.len(title))/2
+  local topbar=Bar:new(Pos2:new(1,1),{title_text=title_text},barcol,barcol)
+  local frame=Frame:new({topbar=topbar,icon=info_icon,text=text_label,close_button=close_button},size2,framecol)
   return frame
 end
 return tgl
