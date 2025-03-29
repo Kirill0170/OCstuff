@@ -3,7 +3,7 @@ local graph=require("graph")
 local event=require("event")
 local thread=require("thread")
 local rdgp={}
-rdgp.version="0.6"
+rdgp.version="0.6.2"
 function rdgp.graphHandler(name,unit,colors,dataEvent)
   local g=graph.new(name,unit,colors)
   while true do
@@ -48,17 +48,18 @@ function rdgp.dataHandler(fun)
     end
   end
 end
-function rdgp.server(fun,name,unit)
+function rdgp.server(fun,name,unit,colors)
   if not mnp.isConnected(true) then error("Couldn't connect to network") end
   if not name then name=os.getenv("this_ip").." graph" end
   if not unit then unit="x" end
+  if not colors then colors=graph.defaultColorTable end
   thread.create(rdgp.dataHandler,fun):detach()
   mnp.log("RDGP","Server started")
   while true do
     local rdata,np=mnp.receive("broadcast","rdgp",60)
     if rdata then
       if rdata[1]=="connect" then
-        mnp.send(np["route"][0],"rdgp",{"ok",name,unit})
+        mnp.send(np["route"][0],"rdgp",{"ok",name,unit,colors})
         table.insert(rdgp.clients,np["route"][0])
         mnp.log("RDGP","Connected "..np["route"][0])
       elseif rdata[2]=="disconnect" then
