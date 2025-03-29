@@ -35,7 +35,8 @@ function rdgp.connectGraph(dest)
 end
 rdgp.clients={}
 function rdgp.dataHandler(fun)
-  while os.sleep(1) do
+  while true do
+    os.sleep(1)
     local success,data=pcall(fun)
     if not success then
       mnp.log("RDGP","Couldn't get data: "..data,2)
