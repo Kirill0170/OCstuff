@@ -3,12 +3,15 @@ local graph=require("graph")
 local event=require("event")
 local thread=require("thread")
 local rdgp={}
-rdgp.version="0.6.2"
-function rdgp.graphHandler(name,unit,colors,dataEvent)
+rdgp.version="0.6.3"
+function rdgp.graphHandler(name,unit,colors,dataEvent,ip)
   local g=graph.new(name,unit,colors)
   while true do
     local id,data=event.pullMultiple(dataEvent,"interrupted")
-    if id=="interrupted" then break end
+    if id=="interrupted" then
+      mnp.send(ip,"rdgp",{"disconnect"})
+      break
+    end
     data=require("serialization").unserialize(data)
     if data[1]=="data" then
       if tonumber(data[2]) then
@@ -28,7 +31,7 @@ function rdgp.connectGraph(dest)
     local dataEvent="rdgpData"
     local stopEvent="interrupted"
     thread.create(mnp.listen,ip,"rdgp",stopEvent,dataEvent):detach()
-    rdgp.graphHandler(rdata[2],rdata[3],rdata[4],dataEvent)
+    rdgp.graphHandler(rdata[2],rdata[3],rdata[4],dataEvent,ip)
     return true
   end
   return false
