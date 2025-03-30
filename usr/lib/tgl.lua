@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.5.7"
+tgl.ver="0.5.8"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -226,6 +226,37 @@ function Text:newPos2(x,y)
   return true
 end
 
+MultiText={}
+MultiText.__index=MultiText
+function MultiText:new(objects,pos2)
+  if type(objects)=="table" then
+    local obj=setmetatable({},MultiText)
+    obj.type="MultiText"
+    obj.objects={}
+    for k,object in pairs(objects) do
+      if type(object)=="table" then
+        if object.type=="Text" then
+          if not tonumber(k) then obj.objects[k]=object
+          else table.insert(obj.objects,object) end
+        end
+      end
+    end
+    obj.pos2=pos2 or Pos2:new()
+    return obj
+  end
+end
+function MultiText:render()
+  local startX=self.pos2.x
+  for _,object in pairs(self.objects) do
+    if object.pos2 then object:render()
+    else
+      object.pos2=Pos2:new(startX,self.pos2.y)
+      startX=startX+string.len(object.text)
+      object:render()
+    end
+  end
+end
+
 Button={}
 Button.__index=Button
 function Button:new(text,callback,pos2,color2)
@@ -394,6 +425,7 @@ Frame={}
 Frame.__index=Frame
 function Frame:new(objects,size2,col2)
   local obj=setmetatable({},Frame)
+  obj.type="Frame"
   obj.objects=objects or {}
   obj.size2=size2 or Size2:new()
   obj.col2=col2 or Color2:new()
@@ -414,6 +446,9 @@ function Frame:translate()
             --tgl.util.log("Bar Rescale: "..object.sizeX.." -> "..self.size2.sizeX.." - "..object.pos2.x.." + "..self.size2.x1,"Frame/translate:Bar")
             object.sizeX=self.size2.sizeX-object.pos2.x+self.size2.x1
           end
+        end
+        if object.type=="Frame" then
+          object:translate()
         end
       else
         tgl.util.log("Corrupted object! Type: "..tostring(object.type),"Frame/translate")
@@ -544,6 +579,25 @@ function ScreenSave:render()
       gpu.set(x,y,self.data[x][y][1])
     end
   end
+end
+function ScreenSave:dump(filename)
+  if not filename then filename="screensave.st" end
+  local file=io.open(filename,"w")
+  if not file then
+    tgl.util.log("Couldn't open file: "..tostring(filename),"ScreenSave/dump")
+    return false
+  end
+  file:write(require("serialization").serialize(self.data,true)):close()
+end
+
+function Frame:renderSS()
+  local ss=ScreenSave:new(self.size2)
+  self:render()
+  self.ss=ss
+end
+function Frame:hideSS()
+  self.hidden=true
+  if self.ss then self.ss:render() end
 end
 
 function tgl.window(size2,title,barcol,framecol)
