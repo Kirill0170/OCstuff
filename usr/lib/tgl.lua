@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.5.8"
+tgl.ver="0.5.9"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -190,6 +190,7 @@ function Size2:moveToPos2(pos2)
 end
 
 function tgl.fillSize2(size2,col2,char)
+  if not size2 then tgl.util.log("no size2 given","fillSize2") return end
   if not char then char=" " end
   local prev=tgl.changeToColor2(col2)
   gpu.fill(size2.x1,size2.y1,size2.sizeX,size2.sizeY,char)
@@ -383,7 +384,6 @@ function Bar:render()
     end
   else
     local startX=self.pos2.x
-    tgl.util.log("Bar start X:"..startX,"Bar/render")
     for _,object in pairs(self.objects) do
       if startX>self.pos2.x+self.sizeX then
         tgl.util.log("Bar: out of bounds: "..startX,"Bar/render")
@@ -427,7 +427,7 @@ function Frame:new(objects,size2,col2)
   local obj=setmetatable({},Frame)
   obj.type="Frame"
   obj.objects=objects or {}
-  obj.size2=size2 or Size2:new()
+  obj.size2=size2 or Size2:newFromSize(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY)
   obj.col2=col2 or Color2:new()
   obj.borderType="outline"
   --translate objects
@@ -519,7 +519,7 @@ function Frame:enableAll()
   for _,object in pairs(self.objects) do
     if object.type then
       if object.type=="Button" or object.type=="InputField" then object:enable() end
-      if object.type=="Bar" then object:enableAll() end
+      if object.type=="Bar" or object.type=="Frame" then object:enableAll() end
     end
   end
 end
@@ -527,7 +527,7 @@ function Frame:disableAll()
   for _,object in pairs(self.objects) do
     if object.type then
       if object.type=="Button" or object.type=="InputField" then object:disable() end
-      if object.type=="Bar" then object:disableAll() end
+      if object.type=="Bar" or object.type=="Frame" then object:disableAll() end
     end
   end
 end
@@ -587,17 +587,49 @@ function ScreenSave:dump(filename)
     tgl.util.log("Couldn't open file: "..tostring(filename),"ScreenSave/dump")
     return false
   end
-  file:write(require("serialization").serialize(self.data,true)):close()
+  file:write(require("serialization").serialize({self.size2.x1,self.size2.y1,self.size2.x2,self.size2.y2}))
+  file:write("\n")
+  file:write(require("serialization").serialize(self.data)):close()
+end
+function ScreenSave:load(filename)
+  if not filename then filename="screensave.st" end
+  local file=io.open(filename)
+  if not file then
+    tgl.util.log("Couldn't open file: "..tostring(filename),"ScreenSave/load")
+    return false
+  end
+  local size_raw=require("serialization").unserialize(file:read("*l"))
+  if size_raw then
+    local load_size2=Size2:newFromPoint(size_raw[1],size_raw[2],size_raw[3],size_raw[4])
+    if load_size2 then
+      local data=require("serialization").unserialize(file:read("*l"))
+      if data then
+        local obj=setmetatable({},ScreenSave)
+        obj.size2=load_size2
+        obj.data=data
+        return obj
+      end
+    end
+  end
+  return nil
 end
 
-function Frame:renderSS()
+function Frame:open()
+  self.hidden=false
   local ss=ScreenSave:new(self.size2)
   self:render()
+  self:enableAll()
   self.ss=ss
 end
-function Frame:hideSS()
+function Frame:close()
   self.hidden=true
-  if self.ss then self.ss:render() end
+  self:disableAll()
+  if self.ss then self.ss:render() self.ss=nil end
+  for _,object in pairs(self.objects) do
+    if object.type then
+      if object.type=="Frame" then object:close() end
+    end
+  end
 end
 
 function tgl.window(size2,title,barcol,framecol)
