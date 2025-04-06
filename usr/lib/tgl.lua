@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.5.9"
+tgl.ver="0.5.10"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -59,6 +59,28 @@ function tgl.util.printColors16(noNextLine)
   end
   if noNextLine then term.write("\n") end
 end
+function tgl.util.getLineMatched(pos2,text,col2)
+  if type(pos2)~="table" then return end
+  if not text then return end
+  local matched=0
+  local dolog=true
+  for i=1,unicode.len(text) do
+    local char,fgcol,bgcol=gpu.get(pos2.x+i-1,pos2.y)
+    if char==unicode.sub(text,i,i) then
+      if col2 then
+        if fgcol==col2[1] and bgcol==col2[2] then
+          matched=matched+1
+        else
+          tgl.util.log("Color mismatch: "..tostring(bgcol).." "..tostring(col2[2]),"Util/getLineMatched")
+          if gpu.getDepth()==4 and dolog then tgl.util.log("4bit color problem, refer to tgl.defaults.colors16","Util/getLineMatched") end
+          dolog=false
+        end
+      else matched=matched+1
+      end
+    end
+  end
+  return matched
+end
 
 tgl.util.log("TGL version "..tgl.ver.." loaded")
 
@@ -80,7 +102,7 @@ end
 tgl.defaults.colors2={}
 tgl.defaults.colors2.black=Color2:new(0xFFFFFF,0)
 tgl.defaults.colors2.white=Color2:new(0,0xFFFFFF)
-tgl.defaults.colors2.close=Color2:new(0xFFFFFF,0xFF0000)
+tgl.defaults.colors2.close=Color2:new(0xFFFFFF,0xFF3333)
 
 function tgl.changeToColor2(col2,ignore)
   if not col2 then return false end
@@ -226,6 +248,12 @@ function Text:newPos2(x,y)
   self.pos2=newPos2
   return true
 end
+function Text:updateText(text)
+  if type(text)=="string" or type(text)=="number" then
+    self.text=text
+    self:render()
+  end
+end
 
 MultiText={}
 MultiText.__index=MultiText
@@ -270,11 +298,21 @@ function Button:new(text,callback,pos2,color2)
   obj.callback=callback
   obj.pos2=pos2 or Pos2:new()
   obj.col2=color2 or Color2:new()
+  obj.checkRendered=true -- check if button is on screen
   obj.handler=function (_,_,x,y)
     if x>=obj.pos2.x
     and x<obj.pos2.x+string.len(obj.text)
     and y==obj.pos2.y then
-      thread.create(obj.onClick):detach()
+      --check
+      if obj.checkRendered then
+        if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.len(obj.text)<0.6 then
+          return --
+        end
+      end
+
+      if type(obj.onClick)=="function" then
+        thread.create(obj.onClick):detach()
+      end
       local success,err=pcall(obj.callback)
       if not success then
         tgl.util.log("Button handler error: "..err,"Button/handler")
