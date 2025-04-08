@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.5.11"
+tgl.ver="0.5.12"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -52,6 +52,7 @@ tgl.defaults.keys.space=32
 tgl.defaults.keys.ctrlz=26
 tgl.defaults.keys.ctrlv=22
 tgl.defaults.keys.ctrlc=3
+tgl.defaults.keys.esc=27
 
 function tgl.util.log(text,mod)
   if tgl.debug then
@@ -376,12 +377,14 @@ function InputField:new(text,pos2,col2)
   obj.eventName="defaultInputEvent"
   obj.checkRendered=true
   obj.handler=function (_,_,x,y)
+    local textLen=unicode.len(obj.text)
+    if textLen==0 then textLen=unicode.len(obj.defaultText) end
     if x>=obj.pos2.x
     and x<obj.pos2.x+string.len(obj.text)
     and y==obj.pos2.y then
       if obj.checkRendered then
         if tgl.util.getLineMatched(obj.pos2,obj.text)/unicode.len(obj.text)<1.0 then
-          tgl.util.log(tgl.util.getLineMatched(obj.pos2,obj.text).." "..obj.text.." "..tgl.util.getLine(obj.pos2,string.len(obj.text)),"InputField/handler")
+          tgl.util.log(tgl.util.getLineMatched(obj.pos2,obj.text).." "..obj.text.." "..tgl.util.getLine(obj.pos2,unicode.len(obj.text)),"InputField/handler")
           return
         end
       end
@@ -412,6 +415,108 @@ end
 function InputField:disable()
   event.ignore("touch",self.handler)
 end
+
+DevInputField={}
+DevInputField.__index=DevInputField
+function DevInputField:new(text,pos2,col2)
+  local obj=setmetatable({},DevInputField)
+  obj.type="InputField"
+  obj.text=""
+  obj.defaultText=text or "[______]"
+  obj.pos2=pos2 or Pos2:new()
+  obj.col2=col2 or Color2:new()
+  obj.eventName="devInputEvent"
+  obj.checkRendered=true
+  obj.erase=true
+  obj.handler=function (_,_,x,y)
+    local textLen=unicode.len(obj.text)
+    if textLen==0 then textLen=unicode.len(obj.defaultText) end
+    if x>=obj.pos2.x
+    and x<obj.pos2.x+textLen
+    and y==obj.pos2.y then
+      if obj.checkRendered then
+        if unicode.len(obj.text)>0 then
+          if tgl.util.getLineMatched(obj.pos2,obj.text)/textLen<1.0 then
+            tgl.util.log(tgl.util.getLineMatched(obj.pos2,obj.text).." "..obj.text.." "..tgl.util.getLine(obj.pos2,textLen),"DIF/handler")
+            return
+          end
+        else
+          if tgl.util.getLineMatched(obj.pos2,obj.defaultText)/textLen<1.0 then
+            tgl.util.log(tgl.util.getLineMatched(obj.pos2,obj.defaultText).." "..obj.text.." "..tgl.util.getLine(obj.pos2,textLen),"DIF/handler")
+            return
+          end
+        end
+      end
+      obj:disable()
+      obj:input()
+      event.push(obj.eventName,obj.text)
+      obj:enable()
+    end
+  end
+  return obj
+end
+function DevInputField:input()
+  local prev=tgl.changeToPos2(self.pos2)
+  local prevCol=tgl.changeToColor2(self.col2)
+  local printChar=Text:new(" ",Color2:new(0,tgl.defaults.colors16["lime"]))
+  local offsetX=0
+  if self.erase then
+    if self.text=="" then gpu.fill(self.pos2.x,self.pos2.y,unicode.len(self.defaultText)+1,1," ")
+    else gpu.fill(self.pos2.x,self.pos2.y,unicode.len(self.text)+1,1," ") end
+    self.text=""
+  else
+    if self.text=="" then gpu.fill(self.pos2.x,self.pos2.y,unicode.len(self.defaultText)+1,1," ") offsetX=0
+    else offsetX=unicode.len(self.text) end
+  end
+  function printChr()
+    printChar.pos2=Pos2:new(self.pos2.x+offsetX,self.pos2.y)
+    printChar:render()
+  end
+  printChr()
+  while true do
+    local id,_,key,key2=event.pullMultiple("interrupted","key_down")
+    if offsetX<0 then offsetX=0 tgl.util.log("Input going offbounds","DIF/input") end
+    if key==tgl.defaults.keys.enter or id=="interrupted" then
+      break
+    elseif (key==tgl.defaults.keys.backspace or key==tgl.defaults.keys.delete) and unicode.len(self.text)>0 then
+      local textLen=unicode.len(self.text)
+      gpu.fill(self.pos2.x,self.pos2.y,textLen+1,1," ")
+      offsetX=offsetX-unicode.charWidth(unicode.sub(self.text,textLen))
+      self.text=unicode.sub(self.text,1,textLen-1)
+      if textLen-1>0 then self:render()
+      else gpu.fill(self.pos2.x,self.pos2.y,unicode.len(self.text)+1,1," ") end
+      printChr()
+    elseif key>=32 and key~=tgl.defaults.keys.delete then
+      if unicode.len(self.text)+unicode.charWidth(key)<=unicode.len(self.defaultText) then
+        self.text=self.text..unicode.char(key)
+        self:render()
+        offsetX=offsetX+unicode.charWidth(unicode.char(key))
+        printChr()
+      end
+    end
+  end
+  tgl.changeToPos2(prev,true)
+  tgl.changeToColor2(prevCol,true)
+  printChar.col2=self.col2
+  printChr()
+  self:render()
+end
+function DevInputField:render()
+  if self.hidden then return false end
+  local prev=tgl.changeToColor2(self.col2)
+  if self.text=="" then gpu.set(self.pos2.x,self.pos2.y,self.defaultText)
+  else gpu.set(self.pos2.x,self.pos2.y,self.text) end
+  tgl.changeToColor2(prev,true)
+end
+function DevInputField:enable()
+  event.listen("touch",self.handler)
+end
+function DevInputField:disable()
+  event.ignore("touch",self.handler)
+end
+
+Progressbar={}
+Progressbar.__index=Progressbar
 
 Bar={}
 Bar.__index=Bar
