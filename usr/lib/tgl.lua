@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.5.10"
+tgl.ver="0.5.11"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -43,6 +43,16 @@ tgl.defaults.boxes.double="═║╔╗╚╝╠╣╦╩╬"
 tgl.defaults.boxes.signle="─│┌┐└┘├┤┬┴┼"
 tgl.defaults.boxes.round= "─│╭╮╰╯├┤┬┴┼"
 
+tgl.defaults.keys={}
+tgl.defaults.keys.backspace=8
+tgl.defaults.keys.delete=127
+tgl.defaults.keys.null=0
+tgl.defaults.keys.enter=13
+tgl.defaults.keys.space=32
+tgl.defaults.keys.ctrlz=26
+tgl.defaults.keys.ctrlv=22
+tgl.defaults.keys.ctrlc=3
+
 function tgl.util.log(text,mod)
   if tgl.debug then
     local c=require("component")
@@ -58,6 +68,14 @@ function tgl.util.printColors16(noNextLine)
     if noNextLine then term.write(" ") end
   end
   if noNextLine then term.write("\n") end
+end
+function tgl.util.getLine(pos2,len)
+  local s=""
+  for i=1,len+1 do
+    local char=gpu.get(pos2.x+i-1,pos2.y)
+    s=s..char
+  end
+  return s
 end
 function tgl.util.getLineMatched(pos2,text,col2)
   if type(pos2)~="table" then return end
@@ -77,9 +95,18 @@ function tgl.util.getLineMatched(pos2,text,col2)
         end
       else matched=matched+1
       end
+    else
+      tgl.util.log(char.."!="..unicode.sub(text,i,i),"Util/getLineMatched")
     end
   end
   return matched
+end
+function tgl.util.strgen(char,num)
+  local s=""
+  for i=1,num do
+    s=s..char
+  end
+  return s
 end
 
 tgl.util.log("TGL version "..tgl.ver.." loaded")
@@ -242,12 +269,6 @@ function Text:render(noNextLine)
   tgl.changeToColor2(prev,true)
   return true
 end
-function Text:newPos2(x,y)
-  local newPos2=Pos2:new(x,y)
-  if not newPos2 then return false end
-  self.pos2=newPos2
-  return true
-end
 function Text:updateText(text)
   if type(text)=="string" or type(text)=="number" then
     self.text=text
@@ -303,13 +324,11 @@ function Button:new(text,callback,pos2,color2)
     if x>=obj.pos2.x
     and x<obj.pos2.x+string.len(obj.text)
     and y==obj.pos2.y then
-      --check
       if obj.checkRendered then
         if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.len(obj.text)<0.6 then
-          return --
+          return
         end
       end
-
       if type(obj.onClick)=="function" then
         thread.create(obj.onClick):detach()
       end
@@ -332,12 +351,6 @@ function Button:new(text,callback,pos2,color2)
   end
   return obj
 end
-function Button:newPos2(x,y)
-  local newPos2=Pos2:new(x,y)
-  if not newPos2 then return false end
-  self.pos2=newPos2
-  return true
-end
 function Button:enable()
   event.listen("touch",self.handler)
 end
@@ -356,20 +369,29 @@ InputField.__index=InputField
 function InputField:new(text,pos2,col2)
   local obj=setmetatable({},InputField)
   obj.type="InputField"
-  obj.text=text or "[______]"
+  obj.text=""
+  obj.defaultText=text or "[______]"
   obj.pos2=pos2 or Pos2:new()
   obj.col2=col2 or Color2:new()
-  obj.value=""
   obj.eventName="defaultInputEvent"
+  obj.checkRendered=true
   obj.handler=function (_,_,x,y)
     if x>=obj.pos2.x
     and x<obj.pos2.x+string.len(obj.text)
     and y==obj.pos2.y then
-      obj:disable()
-      local prev=tgl.changeToPos2(obj.pos2,false,1)
+      if obj.checkRendered then
+        if tgl.util.getLineMatched(obj.pos2,obj.text)/unicode.len(obj.text)<1.0 then
+          tgl.util.log(tgl.util.getLineMatched(obj.pos2,obj.text).." "..obj.text.." "..tgl.util.getLine(obj.pos2,string.len(obj.text)),"InputField/handler")
+          return
+        end
+      end
+      local prev=tgl.changeToPos2(obj.pos2)
       local prevCol=tgl.changeToColor2(self.col2)
-      obj.value=io.read()
-      event.push(obj.eventName,obj.value)
+      obj:disable()
+      obj.text=""
+      obj:render()
+      obj.text=io.read()
+      event.push(obj.eventName,obj.text)
       obj:enable()
       tgl.changeToPos2(prev,true)
       tgl.changeToColor2(prevCol,true)
@@ -380,6 +402,7 @@ end
 function InputField:render()
   if self.hidden then return false end
   local prev=tgl.changeToColor2(self.col2)
+  if self.text=="" then self.text=self.defaultText end
   gpu.set(self.pos2.x,self.pos2.y,self.text)
   tgl.changeToColor2(prev,true)
 end
@@ -414,7 +437,7 @@ function Bar:render()
       local len=string.len(object.text)
       local startX=self.pos2.x+(self.sizeX-len)/2
       tgl.util.log("Bar start X:"..startX,"Bar/render")
-      object:newPos2(startX,self.pos2.y)
+      object.pos2=Pos2:new(startX,self.pos2.y)
       if not object.customCol2 and self.objectColor2 then
         object.col2=self.objectColor2
       end
@@ -429,10 +452,10 @@ function Bar:render()
       end
       if object.type then
         if not object.customX then
-          object:newPos2(startX,self.pos2.y)
+          object.pos2=Pos2:new(startX,self.pos2.y)
           startX=startX+string.len(object.text)+self.space
         else
-          object:newPos2(self.pos2.x+object.customX-1,self.pos2.y)
+          object.pos2=Pos2:new(self.pos2.x+object.customX-1,self.pos2.y)
         end
         if not object.customCol2 and self.objectColor2 then
           object.col2=self.objectColor2
@@ -670,7 +693,7 @@ function Frame:close()
   end
 end
 
-function tgl.window(size2,title,barcol,framecol)
+function tgl.defaults.window(size2,title,barcol,framecol)
   if not size2 then return nil end
   if not title then title="Untitled" end
   if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
@@ -684,7 +707,7 @@ function tgl.window(size2,title,barcol,framecol)
   local frame=Frame:new({topbar=topbar},size2,framecol)
   return frame
 end
-function tgl.window_outlined(size2,title,borders,barcol,framecol)
+function tgl.defaults.window_outlined(size2,title,borders,barcol,framecol)
   if not size2 then return nil end
   if not title then title="Untitled" end
   if not borders then borders=tgl.defaults.boxes.signle end
@@ -700,7 +723,7 @@ function tgl.window_outlined(size2,title,borders,barcol,framecol)
   frame.borders=borders
   return frame
 end
-function tgl.notificationWindow(size2,title,text,barcol,framecol)
+function tgl.defaults.notificationWindow(size2,title,text,barcol,framecol)
   if not size2 then return nil end
   if not title then title="Untitled" end
   if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
