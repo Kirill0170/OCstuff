@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.5.12"
+tgl.ver="0.5.13"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -37,6 +37,12 @@ tgl.defaults.chars.mediumshade="▒"
 tgl.defaults.chars.lightshade="░"
 tgl.defaults.chars.sqrt="√"
 tgl.defaults.chars.check="✔"
+tgl.defaults.chars.cross="❌"
+tgl.defaults.chars.save="💾"
+tgl.defaults.chars.folder="📁"
+tgl.defaults.chars.fileempty="🗋"
+tgl.defaults.chars.file="🗎"
+tgl.defaults.chars.email="📧"
 
 tgl.defaults.boxes={}
 tgl.defaults.boxes.double="═║╔╗╚╝╠╣╦╩╬"
@@ -131,6 +137,7 @@ tgl.defaults.colors2={}
 tgl.defaults.colors2.black=Color2:new(0xFFFFFF,0)
 tgl.defaults.colors2.white=Color2:new(0,0xFFFFFF)
 tgl.defaults.colors2.close=Color2:new(0xFFFFFF,0xFF3333)
+tgl.defaults.colors2.progressbar=Color2:new(tgl.defaults.colors16.lime,0xFFFFFF)
 
 function tgl.changeToColor2(col2,ignore)
   if not col2 then return false end
@@ -365,61 +372,63 @@ function Button:render()
   tgl.changeToColor2(prev,true)
 end
 
+-- DEPRECATED
+
+-- InputField={}
+-- InputField.__index=InputField
+-- function InputField:new(text,pos2,col2)
+--   local obj=setmetatable({},InputField)
+--   obj.type="InputField"
+--   obj.text=""
+--   obj.defaultText=text or "[______]"
+--   obj.pos2=pos2 or Pos2:new()
+--   obj.col2=col2 or Color2:new()
+--   obj.eventName="defaultInputEvent"
+--   obj.checkRendered=true
+--   obj.handler=function (_,_,x,y)
+--     local textLen=unicode.len(obj.text)
+--     if textLen==0 then textLen=unicode.len(obj.defaultText) end
+--     if x>=obj.pos2.x
+--     and x<obj.pos2.x+string.len(obj.text)
+--     and y==obj.pos2.y then
+--       if obj.checkRendered then
+--         if tgl.util.getLineMatched(obj.pos2,obj.text)/unicode.len(obj.text)<1.0 then
+--           tgl.util.log(tgl.util.getLineMatched(obj.pos2,obj.text).." "..obj.text.." "..tgl.util.getLine(obj.pos2,unicode.len(obj.text)),"InputField/handler")
+--           return
+--         end
+--       end
+--       local prev=tgl.changeToPos2(obj.pos2)
+--       local prevCol=tgl.changeToColor2(self.col2)
+--       obj:disable()
+--       obj.text=""
+--       obj:render()
+--       obj.text=io.read()
+--       event.push(obj.eventName,obj.text)
+--       obj:enable()
+--       tgl.changeToPos2(prev,true)
+--       tgl.changeToColor2(prevCol,true)
+--     end
+--   end
+--   return obj
+-- end
+-- function InputField:render()
+--   if self.hidden then return false end
+--   local prev=tgl.changeToColor2(self.col2)
+--   if self.text=="" then self.text=self.defaultText end
+--   gpu.set(self.pos2.x,self.pos2.y,self.text)
+--   tgl.changeToColor2(prev,true)
+-- end
+-- function InputField:enable()
+--   event.listen("touch",self.handler)
+-- end
+-- function InputField:disable()
+--   event.ignore("touch",self.handler)
+-- end
+
 InputField={}
 InputField.__index=InputField
 function InputField:new(text,pos2,col2)
   local obj=setmetatable({},InputField)
-  obj.type="InputField"
-  obj.text=""
-  obj.defaultText=text or "[______]"
-  obj.pos2=pos2 or Pos2:new()
-  obj.col2=col2 or Color2:new()
-  obj.eventName="defaultInputEvent"
-  obj.checkRendered=true
-  obj.handler=function (_,_,x,y)
-    local textLen=unicode.len(obj.text)
-    if textLen==0 then textLen=unicode.len(obj.defaultText) end
-    if x>=obj.pos2.x
-    and x<obj.pos2.x+string.len(obj.text)
-    and y==obj.pos2.y then
-      if obj.checkRendered then
-        if tgl.util.getLineMatched(obj.pos2,obj.text)/unicode.len(obj.text)<1.0 then
-          tgl.util.log(tgl.util.getLineMatched(obj.pos2,obj.text).." "..obj.text.." "..tgl.util.getLine(obj.pos2,unicode.len(obj.text)),"InputField/handler")
-          return
-        end
-      end
-      local prev=tgl.changeToPos2(obj.pos2)
-      local prevCol=tgl.changeToColor2(self.col2)
-      obj:disable()
-      obj.text=""
-      obj:render()
-      obj.text=io.read()
-      event.push(obj.eventName,obj.text)
-      obj:enable()
-      tgl.changeToPos2(prev,true)
-      tgl.changeToColor2(prevCol,true)
-    end
-  end
-  return obj
-end
-function InputField:render()
-  if self.hidden then return false end
-  local prev=tgl.changeToColor2(self.col2)
-  if self.text=="" then self.text=self.defaultText end
-  gpu.set(self.pos2.x,self.pos2.y,self.text)
-  tgl.changeToColor2(prev,true)
-end
-function InputField:enable()
-  event.listen("touch",self.handler)
-end
-function InputField:disable()
-  event.ignore("touch",self.handler)
-end
-
-DevInputField={}
-DevInputField.__index=DevInputField
-function DevInputField:new(text,pos2,col2)
-  local obj=setmetatable({},DevInputField)
   obj.type="InputField"
   obj.text=""
   obj.defaultText=text or "[______]"
@@ -455,7 +464,7 @@ function DevInputField:new(text,pos2,col2)
   end
   return obj
 end
-function DevInputField:input()
+function InputField:input()
   local prev=tgl.changeToPos2(self.pos2)
   local prevCol=tgl.changeToColor2(self.col2)
   local printChar=Text:new(" ",Color2:new(0,tgl.defaults.colors16["lime"]))
@@ -501,22 +510,45 @@ function DevInputField:input()
   printChr()
   self:render()
 end
-function DevInputField:render()
+function InputField:render()
   if self.hidden then return false end
   local prev=tgl.changeToColor2(self.col2)
   if self.text=="" then gpu.set(self.pos2.x,self.pos2.y,self.defaultText)
   else gpu.set(self.pos2.x,self.pos2.y,self.text) end
   tgl.changeToColor2(prev,true)
 end
-function DevInputField:enable()
+function InputField:enable()
   event.listen("touch",self.handler)
 end
-function DevInputField:disable()
+function InputField:disable()
   event.ignore("touch",self.handler)
 end
 
 Progressbar={}
 Progressbar.__index=Progressbar
+function Progressbar:new(pos2,len,col2)
+  local obj=setmetatable({},Progressbar)
+  obj.type="Progressbar"
+  obj.pos2=pos2 or Pos2:new()
+  obj.len=tonumber(len) or 10
+  obj.col2=col2 or tgl.defaults.colors2.progressbar
+  obj.text=tgl.util.strgen(" ",obj.len)
+  obj.value=0 --percentage
+  return obj
+end
+function Progressbar:render()
+  local fill=math.floor(self.len*self.value)
+  self.text=tgl.util.strgen(tgl.defaults.chars.full,fill)..tgl.util.strgen(" ",self.len-fill)
+  local prev=tgl.changeToColor2(self.col2)
+  gpu.set(self.pos2.x,self.pos2.y,self.text)
+  tgl.changeToColor2(prev,true)
+end
+function Progressbar:setValue(num,render)
+  if not tonumber(num) then return false end
+  if num>1 or num<0 then return false end
+  self.value=num
+  if render then self:render() end
+end
 
 Bar={}
 Bar.__index=Bar
@@ -595,7 +627,7 @@ function Frame:new(objects,size2,col2)
   obj.objects=objects or {}
   obj.size2=size2 or Size2:newFromSize(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY)
   obj.col2=col2 or Color2:new()
-  obj.borderType="outline"
+  obj.borderType="inline"
   --translate objects
   obj:translate()
   return obj
@@ -628,7 +660,7 @@ function Frame:render()
   tgl.fillSize2(self.size2,self.col2)
   --border
   if type(self.borders)=="string" and string.len(self.borders)>=6 then
-    if not self.borderType then self.borderType="outline" end
+    if not self.borderType then self.borderType="inline" end
     if self.borderType=="outline" then
       local horizontal=unicode.sub(self.borders,1,1)
       local vertical=unicode.sub(self.borders,2,2)
