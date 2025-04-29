@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.5.13"
+tgl.ver="0.6.0.2"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -60,6 +60,11 @@ tgl.defaults.keys.ctrlv=22
 tgl.defaults.keys.ctrlc=3
 tgl.defaults.keys.esc=27
 
+tgl.sys={}
+tgl.sys.enableTypes={Button=true,InputField=true,ScrollFrame=true}
+tgl.sys.enableAllTypes={Frame=true,Bar=true,ScrollFrame=true}
+tgl.sys.openTypes={Frame=true,ScrollFrame=true}
+
 function tgl.util.log(text,mod)
   if tgl.debug then
     local c=require("component")
@@ -96,14 +101,14 @@ function tgl.util.getLineMatched(pos2,text,col2)
         if fgcol==col2[1] and bgcol==col2[2] then
           matched=matched+1
         else
-          tgl.util.log("Color mismatch: "..tostring(bgcol).." "..tostring(col2[2]),"Util/getLineMatched")
+          --tgl.util.log("Color mismatch: "..tostring(bgcol).." "..tostring(col2[2]),"Util/getLineMatched")
           if gpu.getDepth()==4 and dolog then tgl.util.log("4bit color problem, refer to tgl.defaults.colors16","Util/getLineMatched") end
           dolog=false
         end
       else matched=matched+1
       end
     else
-      tgl.util.log(char.."!="..unicode.sub(text,i,i),"Util/getLineMatched")
+      --tgl.util.log(char.."!="..unicode.sub(text,i,i),"Util/getLineMatched")
     end
   end
   return matched
@@ -116,7 +121,14 @@ function tgl.util.strgen(char,num)
   return s
 end
 
-tgl.util.log("TGL version "..tgl.ver.." loaded")
+function tgl.util.objectInfo(object)
+  tgl.util.log("Object type: "..object.type,"util/objectInfo")
+  if object.pos2 then tgl.util.log("Linear: Pos2("..object.pos2.x.." "..object.pos2.y..")","util/objectInfo") end
+  if object.size2 then tgl.util.log("2-D: Size2("..object.size.pos1.x.." "..object.size2.pos1.y..
+  " "..object.size2.sizeX.." "..object.size2.sizeY..")","util/objectInfo") end
+  if object.type=="Text" or object.type=="Button" or object.type=="InputField" then tgl.util.log("Text: "..object.text,"util/objectInfo") end
+  if object.objects then tgl.util.log("Contains objects","util/objectInfo") end
+end
 
 Color2={}
 Color2.__index=Color2
@@ -245,6 +257,9 @@ function Size2:moveToPos2(pos2)
   self.pos2=Pos2:new(self.x2,self.y2)
   return true
 end
+function Size2:new(x,y,sizeX,sizeY)--alias for Size2:newFromSize()
+  return Size2:newFromSize(x,y,sizeX,sizeY)
+end
 
 function tgl.fillSize2(size2,col2,char)
   if not size2 then tgl.util.log("no size2 given","fillSize2") return end
@@ -372,59 +387,6 @@ function Button:render()
   tgl.changeToColor2(prev,true)
 end
 
--- DEPRECATED
-
--- InputField={}
--- InputField.__index=InputField
--- function InputField:new(text,pos2,col2)
---   local obj=setmetatable({},InputField)
---   obj.type="InputField"
---   obj.text=""
---   obj.defaultText=text or "[______]"
---   obj.pos2=pos2 or Pos2:new()
---   obj.col2=col2 or Color2:new()
---   obj.eventName="defaultInputEvent"
---   obj.checkRendered=true
---   obj.handler=function (_,_,x,y)
---     local textLen=unicode.len(obj.text)
---     if textLen==0 then textLen=unicode.len(obj.defaultText) end
---     if x>=obj.pos2.x
---     and x<obj.pos2.x+string.len(obj.text)
---     and y==obj.pos2.y then
---       if obj.checkRendered then
---         if tgl.util.getLineMatched(obj.pos2,obj.text)/unicode.len(obj.text)<1.0 then
---           tgl.util.log(tgl.util.getLineMatched(obj.pos2,obj.text).." "..obj.text.." "..tgl.util.getLine(obj.pos2,unicode.len(obj.text)),"InputField/handler")
---           return
---         end
---       end
---       local prev=tgl.changeToPos2(obj.pos2)
---       local prevCol=tgl.changeToColor2(self.col2)
---       obj:disable()
---       obj.text=""
---       obj:render()
---       obj.text=io.read()
---       event.push(obj.eventName,obj.text)
---       obj:enable()
---       tgl.changeToPos2(prev,true)
---       tgl.changeToColor2(prevCol,true)
---     end
---   end
---   return obj
--- end
--- function InputField:render()
---   if self.hidden then return false end
---   local prev=tgl.changeToColor2(self.col2)
---   if self.text=="" then self.text=self.defaultText end
---   gpu.set(self.pos2.x,self.pos2.y,self.text)
---   tgl.changeToColor2(prev,true)
--- end
--- function InputField:enable()
---   event.listen("touch",self.handler)
--- end
--- function InputField:disable()
---   event.ignore("touch",self.handler)
--- end
-
 InputField={}
 InputField.__index=InputField
 function InputField:new(text,pos2,col2)
@@ -434,8 +396,9 @@ function InputField:new(text,pos2,col2)
   obj.defaultText=text or "[______]"
   obj.pos2=pos2 or Pos2:new()
   obj.col2=col2 or Color2:new()
-  obj.eventName="devInputEvent"
+  obj.eventName="InputEvent"
   obj.checkRendered=true
+  obj.charCol2=Color2:new(0,tgl.defaults.colors16["lime"])
   obj.erase=true
   obj.handler=function (_,_,x,y)
     local textLen=unicode.len(obj.text)
@@ -467,7 +430,7 @@ end
 function InputField:input()
   local prev=tgl.changeToPos2(self.pos2)
   local prevCol=tgl.changeToColor2(self.col2)
-  local printChar=Text:new(" ",Color2:new(0,tgl.defaults.colors16["lime"]))
+  local printChar=Text:new(" ",self.charCol2)
   local offsetX=0
   if self.erase then
     if self.text=="" then gpu.fill(self.pos2.x,self.pos2.y,unicode.len(self.defaultText)+1,1," ")
@@ -607,14 +570,14 @@ end
 function Bar:enableAll()
   for _,object in pairs(self.objects) do
     if object.type then
-      if object.type=="Button" or object.type=="InputField" then object:enable() end
+      if tgl.sys.enableTypes[object.type] then object:enable() end
     end
   end
 end
 function Bar:disableAll()
   for _,object in pairs(self.objects) do
     if object.type then
-      if object.type=="Button" or object.type=="InputField" then object:disable() end
+      if tgl.sys.enableTypes[object.type] then object:disable() end
     end
   end
 end
@@ -632,24 +595,31 @@ function Frame:new(objects,size2,col2)
   obj:translate()
   return obj
 end
-function Frame:translate()
+function Frame:translate() --change to size2
   for _,object in pairs(self.objects) do
     if object.type then
-      if not object.relpos2 then object.relpos2=object.pos2 end
-      local t_pos2=object.relpos2
-      if t_pos2 then
-        object.pos2=Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1) --offset
-        if object.type=="Bar" then
-          if object.pos2.x+object.sizeX>self.size2.sizeX then
-            --tgl.util.log("Bar Rescale: "..object.sizeX.." -> "..self.size2.sizeX.." - "..object.pos2.x.." + "..self.size2.x1,"Frame/translate:Bar")
-            object.sizeX=self.size2.sizeX-object.pos2.x+self.size2.x1
+      if object.type~="Frame" and object.type~="ScrollFrame" then
+        if not object.relpos2 then object.relpos2=object.pos2 end
+        local t_pos2=object.relpos2
+        if t_pos2 then
+          object.pos2=Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1) --offset
+          if object.type=="Bar" then
+            if object.pos2.x+object.sizeX>self.size2.sizeX then
+              --tgl.util.log("Bar Rescale: "..object.sizeX.." -> "..self.size2.sizeX.." - "..object.pos2.x.." + "..self.size2.x1,"Frame/translate:Bar")
+              object.sizeX=self.size2.sizeX-object.pos2.x+self.size2.x1
+            end
           end
-        end
-        if object.type=="Frame" then
-          object:translate()
+        else
+          tgl.util.log("Corrupted object! Type: "..tostring(object.type),"Frame/translate")
         end
       else
-        tgl.util.log("Corrupted object! Type: "..tostring(object.type),"Frame/translate")
+        if not object.relsize2 then object.relsize2=object.size2 end
+        local t_pos2=object.size2.pos1
+        if t_pos2 then
+          object.size2:moveToPos2(Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1))
+        else
+          tgl.util.log("Corrupted frame!","Frame/translate")
+        end
       end
     end
   end
@@ -716,16 +686,16 @@ end
 function Frame:enableAll()
   for _,object in pairs(self.objects) do
     if object.type then
-      if object.type=="Button" or object.type=="InputField" then object:enable() end
-      if object.type=="Bar" or object.type=="Frame" then object:enableAll() end
+      if tgl.sys.enableTypes[object.type] then object:enable() end
+      if tgl.sys.enableAllTypes[object.type] then object:enableAll() end
     end
   end
 end
 function Frame:disableAll()
   for _,object in pairs(self.objects) do
     if object.type then
-      if object.type=="Button" or object.type=="InputField" then object:disable() end
-      if object.type=="Bar" or object.type=="Frame" then object:disableAll() end
+      if tgl.sys.enableTypes[object.type] then object:disable() end
+      if tgl.sys.enableAllTypes[object.type] then object:disableAll() end
     end
   end
 end
@@ -825,7 +795,118 @@ function Frame:close()
   if self.ss then self.ss:render() self.ss=nil end
   for _,object in pairs(self.objects) do
     if object.type then
-      if object.type=="Frame" then object:close() end
+      if tgl.sys.openTypes[object.type] then object:close() end
+    end
+  end
+end
+
+ScrollFrame={}
+ScrollFrame.__index=ScrollFrame
+function ScrollFrame:new(objects,size2,col2)
+  local obj=setmetatable({},ScrollFrame)
+  obj.type="ScrollFrame"
+  obj.objects=objects or {}
+  obj.size2=size2 or Size2:newFromSize(1,1,10,10)
+  obj.col2=col2 or tgl.defaults.colors2.white
+  obj.showScroll=true
+  obj.maxScroll=5
+  obj.scroll=0
+
+  obj.handler=function (_,_,x,y,scr)
+    if x>=obj.size2.x1 and x<=obj.size2.x2 and
+      y>=obj.size2.y1 and y<=obj.size2.y2 then
+      if obj.scroll+scr>=0 and obj.scroll+scr<=obj.maxScroll then
+        obj.scroll=obj.scroll+scr
+        obj:render()
+      end
+    end
+  end
+
+  obj:translate()
+  return obj
+end
+function ScrollFrame:setMaxScroll(n) --?
+  if not tonumber(n) then return false end
+  self.maxScroll=n
+  self.trueSize2=Size2:newFromSize(self.size2.x,self.size2.y,self.size2.sizeX,self.size2.sizeY+self.maxScroll)
+end
+function ScrollFrame:translate()
+  for _,object in pairs(self.objects) do
+    if object.type then
+      if object.type~="Frame" and object.type~="ScrollFrame" then
+        if not object.relpos2 then object.relpos2=object.pos2 end
+        local t_pos2=object.relpos2
+        if t_pos2 then
+          object.pos2=Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1) --offset
+          if object.type=="Bar" then
+            if object.pos2.x+object.sizeX>self.size2.sizeX then
+              --tgl.util.log("Bar Rescale: "..object.sizeX.." -> "..self.size2.sizeX.." - "..object.pos2.x.." + "..self.size2.x1,"Frame/translate:Bar")
+              object.sizeX=self.size2.sizeX-object.pos2.x+self.size2.x1
+            end
+          end
+        else
+          tgl.util.log("Corrupted object! Type: "..tostring(object.type),"ScrollFrame/translate")
+        end
+      else
+        if not object.relsize2 then object.relsize2=object.size2 end
+        local t_pos2=object.size2.pos1
+        if t_pos2 then
+          object.size2:moveToPos2(Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1))
+        else
+          tgl.util.log("Corrupted frame!","ScrollFrame/translate")
+        end
+      end
+    end
+  end
+end
+
+function ScrollFrame:render()
+  if self.hidden then return false end
+  --frame
+  tgl.fillSize2(self.size2,self.col2)
+  --scrollbar
+  if self.showScroll then
+    
+  end
+  --objects
+  for _,object in pairs(self.objects) do
+    if object.type then
+      --check if should render
+      if object.relpos2 then
+        if object.relpos2.y>self.scroll and object.relpos2.y<self.size2.sizeY+self.scroll then
+          --translate
+          object.pos2=Pos2.new(object.relpos2.x+self.size2.x1,object.relpos2.y-self.scroll)
+          object:render()
+        end
+      elseif object.relsize2 then
+        --
+      else
+        tgl.util.log("Corrupted object(no pos2/size2): "..object.type,"ScrollFrame/render")
+        tgl.util.objectInfo(object)
+      end
+    end
+  end
+end
+
+function ScrollFrame:enable()
+  event.listen("scroll",self.handler)
+end
+function ScrollFrame:disable()
+  event.ignore("scroll",self.handler)
+end
+function ScrollFrame:enableAll()
+  for _,object in pairs(self.objects) do
+    if object.type then
+      if tgl.sys.enableTypes[object.type] then object:enable() end
+      if tgl.sys.enableAllTypes[object.type] then object:enableAll() end
+    end
+  end
+end
+function ScrollFrame:disableAll()
+  for _,object in pairs(self.objects) do
+    if object.type then
+      if tgl.sys.enableTypes[object.type] then object:disable() end
+      if tgl.sys.enableAllTypes[object.type] then object:disableAll() end
     end
   end
 end
@@ -874,5 +955,12 @@ function tgl.defaults.notificationWindow(size2,title,text,barcol,framecol)
   local frame=Frame:new({topbar=topbar,icon=info_icon,text=text_label,close_button=close_button},size2,framecol)
   return frame
 end
+
+tgl.util.log("TGL version "..tgl.ver.." loaded")
+
 return tgl
---errors
+--types of objects
+--[[
+linear
+sized
+]]
