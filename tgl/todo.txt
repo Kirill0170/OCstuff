@@ -1,0 +1,5 @@
+fix scrollframe
+Text2
+InputField2
+object dump
+check active area

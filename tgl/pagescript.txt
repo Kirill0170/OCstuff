@@ -1,0 +1,4 @@
+PageScript - scripting for webpages
+#commentary#
+
+a=10 #vars#

@@ -1,0 +1,30 @@
+object -> dumpobject -> file
+
+object prototype:
+{
+type="",
+...
+}
+
+Pos2
+{
+type="Pos2",
+x=int,
+y=int
+}
+
+Color2
+{
+type="Color2",
+
+}
+
+Text
+{
+type="Text",
+pos2={<pos2>},
+color2={<color2>},
+text=""
+}
+
+
