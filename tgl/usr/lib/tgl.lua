@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.0.2"
+tgl.ver="0.6.02.1"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -65,6 +65,33 @@ tgl.sys.enableTypes={Button=true,InputField=true,ScrollFrame=true}
 tgl.sys.enableAllTypes={Frame=true,Bar=true,ScrollFrame=true}
 tgl.sys.openTypes={Frame=true,ScrollFrame=true}
 
+tgl.sys.activeArea=nil --setup later
+
+function tgl.sys.setActiveArea(size2)
+  if size2.type=="Size2" then
+    tgl.sys.activeArea=size2
+    return true
+  end
+  return false
+end
+function tgl.sys.getActiveArea()
+  return tgl.sys.activeArea
+end
+function tgl.sys.resetActiveArea()
+  tgl.sys.activeArea=Size2:newFromSize(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY)
+end
+
+function tgl.util.pos2InSize2(size2,pos2)
+  if size2.type~="Size2" or pos2.type~="Pos2" then return false end
+  if pos2.x>=size2.x1 and pos2.x<=size2.x2 and
+     pos2.y>=size2.y1 and pos2.y<=size2.y2 then return true
+  else return false end
+end
+function tgl.util.pointInSize2(size2,x,y)
+  if size2.type~="Size2" or type(x)~="number" or type(y)~="number" then return false end
+  if x>=size2.x1 and x<=size2.x2 and y>=size2.y1 and y<= size2.y2 then return true 
+  else return false end
+end
 function tgl.util.log(text,mod)
   if tgl.debug then
     local c=require("component")
@@ -94,7 +121,7 @@ function tgl.util.getLineMatched(pos2,text,col2)
   if not text then return end
   local matched=0
   local dolog=true
-  for i=1,unicode.len(text) do
+  for i=1,unicode.wlen(text) do
     local char,fgcol,bgcol=gpu.get(pos2.x+i-1,pos2.y)
     if char==unicode.sub(text,i,i) then
       if col2 then
@@ -139,7 +166,7 @@ function Color2:new(col1,col2)
   col2=tonumber(col2)
   if col1 and col2 then
     if col1>=0 and col1<16777216 and col2>=0 and col2<16777216 then
-      return setmetatable({col1,col2},Color2)
+      return setmetatable({col1,col2,type="Color2"},Color2)
     end
   end
   return nil
@@ -173,6 +200,7 @@ function Pos2:new(x,y)
   if x and y then
     if x>0 and y>0 and x<161 and y<100 then
       local obj=setmetatable({},Pos2)
+      obj.type="Pos2"
       obj[1]=x
       obj[2]=y
       obj.x=x
@@ -205,6 +233,7 @@ function Size2:newFromPoint(x1,y1,x2,y2)
   local pos2=Pos2:new(x2,y2)
   if pos1 and pos2 then
     local obj=setmetatable({},Size2)
+    obj.type="Size2"
     obj.x1=x1
     obj.y1=y1
     obj.x2=x2
@@ -218,8 +247,9 @@ function Size2:newFromPoint(x1,y1,x2,y2)
   return nil
 end
 function Size2:newFromPos2(pos1,pos2)
-  if pos1 and pos2 then
+  if pos1.type and pos2.type then
     local obj=setmetatable({},Size2)
+    obj.type="Size2"
     obj.x1=pos1.x
     obj.y1=pos1.y
     obj.x2=pos2.x
@@ -236,6 +266,7 @@ function Size2:newFromSize(x,y,sizeX,sizeY)
   local pos1=Pos2:new(x,y)
   if pos1 and tonumber(sizeX) and tonumber(sizeY) then
     local obj=setmetatable({},Size2)
+    obj.type="Size2"
     obj.x1=x
     obj.y1=y
     obj.x2=x+sizeX-1
@@ -277,9 +308,19 @@ function Text:new(text,col2,pos2)
   obj.text=text
   obj.col2=col2 or Color2:new()
   obj.pos2=pos2 or nil
+  obj.maxLength=-1 -- -1 for unlimited
   return obj
 end
 function Text:render(noNextLine)
+  if self.maxLength>=0 then
+    if unicode.wlen(self.text)>self.maxLength then
+      if self.maxLength>4 then
+        self.text=unicode.sub(self.text,1,self.maxLength-3).."..."
+      else
+        self.text=unicode.sub(self.text,1,self.maxLength)
+      end
+    end
+  end
   if self.hidden then return false end
   local prev=tgl.changeToColor2(self.col2)
   if not self.pos2 then
@@ -324,7 +365,7 @@ function MultiText:render()
     if object.pos2 then object:render()
     else
       object.pos2=Pos2:new(startX,self.pos2.y)
-      startX=startX+string.len(object.text)
+      startX=startX+unicode.wlen(object.text)
       object:render()
     end
   end
@@ -345,10 +386,11 @@ function Button:new(text,callback,pos2,color2)
   obj.checkRendered=true -- check if button is on screen
   obj.handler=function (_,_,x,y)
     if x>=obj.pos2.x
-    and x<obj.pos2.x+string.len(obj.text)
-    and y==obj.pos2.y then
+    and x<obj.pos2.x+unicode.wlen(obj.text)
+    and y==obj.pos2.y
+    and tgl.util.pointInSize2(tgl.sys.activeArea,x,y) then
       if obj.checkRendered then
-        if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.len(obj.text)<0.6 then
+        if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.wlen(obj.text)<0.6 then
           return
         end
       end
@@ -401,13 +443,12 @@ function InputField:new(text,pos2,col2)
   obj.charCol2=Color2:new(0,tgl.defaults.colors16["lime"])
   obj.erase=true
   obj.handler=function (_,_,x,y)
-    local textLen=unicode.len(obj.text)
-    if textLen==0 then textLen=unicode.len(obj.defaultText) end
-    if x>=obj.pos2.x
-    and x<obj.pos2.x+textLen
-    and y==obj.pos2.y then
+    local textLen=unicode.wlen(obj.text)
+    if textLen==0 then textLen=unicode.wlen(obj.defaultText) end
+    if x>=obj.pos2.x and x<obj.pos2.x+textLen and y==obj.pos2.y
+    and tgl.util.pointInSize2(tgl.sys.activeArea,x,y) then
       if obj.checkRendered then
-        if unicode.len(obj.text)>0 then
+        if unicode.wlen(obj.text)>0 then
           if tgl.util.getLineMatched(obj.pos2,obj.text)/textLen<1.0 then
             tgl.util.log(tgl.util.getLineMatched(obj.pos2,obj.text).." "..obj.text.." "..tgl.util.getLine(obj.pos2,textLen),"DIF/handler")
             return
@@ -431,14 +472,15 @@ function InputField:input()
   local prev=tgl.changeToPos2(self.pos2)
   local prevCol=tgl.changeToColor2(self.col2)
   local printChar=Text:new(" ",self.charCol2)
+  tgl.sys.setActiveArea(Size2:new(self.pos2.x,self.pos2.y,self.pos2.x+unicode.wlen(self.defaultText)-1,self.pos2.y))
   local offsetX=0
   if self.erase then
-    if self.text=="" then gpu.fill(self.pos2.x,self.pos2.y,unicode.len(self.defaultText)+1,1," ")
-    else gpu.fill(self.pos2.x,self.pos2.y,unicode.len(self.text)+1,1," ") end
+    if self.text=="" then gpu.fill(self.pos2.x,self.pos2.y,unicode.wlen(self.defaultText)+1,1," ")
+    else gpu.fill(self.pos2.x,self.pos2.y,unicode.wlen(self.text)+1,1," ") end
     self.text=""
   else
-    if self.text=="" then gpu.fill(self.pos2.x,self.pos2.y,unicode.len(self.defaultText)+1,1," ") offsetX=0
-    else offsetX=unicode.len(self.text) end
+    if self.text=="" then gpu.fill(self.pos2.x,self.pos2.y,unicode.wlen(self.defaultText)+1,1," ") offsetX=0
+    else offsetX=unicode.wlen(self.text) end
   end
   function printChr()
     printChar.pos2=Pos2:new(self.pos2.x+offsetX,self.pos2.y)
@@ -450,16 +492,16 @@ function InputField:input()
     if offsetX<0 then offsetX=0 tgl.util.log("Input going offbounds","DIF/input") end
     if key==tgl.defaults.keys.enter or id=="interrupted" then
       break
-    elseif (key==tgl.defaults.keys.backspace or key==tgl.defaults.keys.delete) and unicode.len(self.text)>0 then
-      local textLen=unicode.len(self.text)
+    elseif (key==tgl.defaults.keys.backspace or key==tgl.defaults.keys.delete) and unicode.wlen(self.text)>0 then
+      local textLen=unicode.wlen(self.text)
       gpu.fill(self.pos2.x,self.pos2.y,textLen+1,1," ")
       offsetX=offsetX-unicode.charWidth(unicode.sub(self.text,textLen))
       self.text=unicode.sub(self.text,1,textLen-1)
       if textLen-1>0 then self:render()
-      else gpu.fill(self.pos2.x,self.pos2.y,unicode.len(self.text)+1,1," ") end
+      else gpu.fill(self.pos2.x,self.pos2.y,unicode.wlen(self.text)+1,1," ") end
       printChr()
     elseif key>=32 and key~=tgl.defaults.keys.delete then
-      if unicode.len(self.text)+unicode.charWidth(key)<=unicode.len(self.defaultText) then
+      if unicode.wlen(self.text)+unicode.charWidth(key)<=unicode.wlen(self.defaultText) then
         self.text=self.text..unicode.char(key)
         self:render()
         offsetX=offsetX+unicode.charWidth(unicode.char(key))
@@ -472,6 +514,7 @@ function InputField:input()
   printChar.col2=self.col2
   printChr()
   self:render()
+  tgl.sys.resetActiveArea()
 end
 function InputField:render()
   if self.hidden then return false end
@@ -534,7 +577,7 @@ function Bar:render()
   if self.centerMode then
     local object=self.objects[1]
     if object.type then
-      local len=string.len(object.text)
+      local len=unicode.wlen(object.text)
       local startX=self.pos2.x+(self.sizeX-len)/2
       tgl.util.log("Bar start X:"..startX,"Bar/render")
       object.pos2=Pos2:new(startX,self.pos2.y)
@@ -553,7 +596,7 @@ function Bar:render()
       if object.type then
         if not object.customX then
           object.pos2=Pos2:new(startX,self.pos2.y)
-          startX=startX+string.len(object.text)+self.space
+          startX=startX+unicode.wlen(object.text)+self.space
         else
           object.pos2=Pos2:new(self.pos2.x+object.customX-1,self.pos2.y)
         end
@@ -629,7 +672,7 @@ function Frame:render()
   --frame
   tgl.fillSize2(self.size2,self.col2)
   --border
-  if type(self.borders)=="string" and string.len(self.borders)>=6 then
+  if type(self.borders)=="string" and unicode.wlen(self.borders)>=6 then
     if not self.borderType then self.borderType="inline" end
     if self.borderType=="outline" then
       local horizontal=unicode.sub(self.borders,1,1)
@@ -920,7 +963,7 @@ function tgl.defaults.window(size2,title,barcol,framecol)
   close_button.customCol2=true
   close_button.customX=size2.sizeX-2
   local title_text=Text:new(title,barcol)
-  title_text.customX=(size2.sizeX-string.len(title))/2
+  title_text.customX=(size2.sizeX-unicode.wlen(title))/2
   local topbar=Bar:new(Pos2:new(1,1),{title_text=title_text,close_button=close_button},barcol,barcol)
   local frame=Frame:new({topbar=topbar},size2,framecol)
   return frame
@@ -935,7 +978,7 @@ function tgl.defaults.window_outlined(size2,title,borders,barcol,framecol)
   close_button.customCol2=true
   close_button.customX=size2.sizeX-2
   local title_text=Text:new(title,barcol)
-  title_text.customX=(size2.sizeX-string.len(title))/2
+  title_text.customX=(size2.sizeX-unicode.wlen(title))/2
   local topbar=Bar:new(Pos2:new(1,1),{title_text=title_text,close_button=close_button},barcol,barcol)
   local frame=Frame:new({topbar=topbar},size2,framecol)
   frame.borders=borders
@@ -947,15 +990,90 @@ function tgl.defaults.notificationWindow(size2,title,text,barcol,framecol)
   if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
   if not framecol then framecol=tgl.defaults.colors2.white end
   local close_button=Button:new(" OK ",function() event.push("close"..title) end,Pos2:new((size2.sizeX-4)/2,size2.sizeY-1),Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue))
-  local info_icon=Text:new("i",Color2:new(0xFFFFFF,tgl.defaults.colors16.darkblue),Pos2:new((size2.sizeX-unicode.len(text))/2-2,3))
-  local text_label=Text:new(text,framecol,Pos2:new((size2.sizeX-unicode.len(text))/2,3))
+  local info_icon=Text:new("i",Color2:new(0xFFFFFF,tgl.defaults.colors16.darkblue),Pos2:new((size2.sizeX-unicode.wlen(text))/2-2,3))
+  local text_label=Text:new(text,framecol,Pos2:new((size2.sizeX-unicode.wlen(text))/2,3))
   local title_text=Text:new(title,barcol)
-  title_text.customX=(size2.sizeX-string.len(title))/2
+  title_text.customX=(size2.sizeX-unicode.wlen(title))/2
   local topbar=Bar:new(Pos2:new(1,1),{title_text=title_text},barcol,barcol)
   local frame=Frame:new({topbar=topbar,icon=info_icon,text=text_label,close_button=close_button},size2,framecol)
   return frame
 end
 
+tgl.dump={}
+function tgl.dump.encodeObject(obj)
+  local ser=require("serialization")
+  local dump={}
+  dump.type="Dump"
+  dump.obj_type=obj.type
+  if obj.type=="Pos2" or obj.type=="Color2" or obj.type=="Size2" then
+    return ser.serialize(obj)
+  elseif tgl.sys.enableAllTypes[obj.type] then
+    dump.objects={}
+    for name,obj2 in pairs(obj.objects) do
+      dump.objects[name]=tgl.dump.encodeObject(obj2)
+    end
+    dump.col2=tgl.dump.encodeObject(obj.col2)
+    if obj.type=="Bar" then
+      --bar 
+    else
+      dump.size2=tgl.dump.encodeObject(obj.size2)
+      if obj.type=="Frame" then
+        dump.borderType=obj.borderType
+        dump.borders=obj.borders
+      else
+        --scrollframe
+      end
+    end
+    --big
+  elseif tgl.sys.enableTypes[obj.type] then
+  else
+    if obj.relpos2 then obj.pos2=obj.relpos2 end --reset
+    dump.pos2=tgl.dump.encodeObject(obj.pos2)
+    dump.col2=tgl.dump.encodeObject(obj.col2)
+    if obj.type=="Text" then
+      dump.text=obj.text
+      dump.maxLength=obj.maxLength
+    end
+  end
+  return ser.serialize(dump)
+end
+function tgl.dump.decodeObject(dump)
+  local ser=require("serialization")
+  if type(dump)=="string" then dump=ser.unserialize(dump) end
+  if dump.type=="Pos2" or dump.type=="Color2" or dump.type=="Size2" then
+    return dump
+  elseif tgl.sys.enableAllTypes[dump.obj_type] then
+    local objects={}
+    for name,obj2 in pairs(dump.objects) do
+      objects[name]=tgl.dump.decodeObject(obj2)
+    end
+    local col2=tgl.dump.decodeObject(dump.col2)
+    if dump.obj_type=="Frame" then
+      local obj=Frame:new(objects,tgl.dump.decodeObject(dump.size2),col2)
+      obj.borders=dump.borders
+      obj.borderType=dump.borderType
+      return obj
+    end
+    --big
+  elseif tgl.sys.enableTypes[dump.obj_type] then
+  else
+    local pos2=tgl.dump.decodeObject(dump.pos2)
+    local col2=tgl.dump.decodeObject(dump.col2)
+    if dump.obj_type=="Text" then
+      local obj=Text:new(dump.text,col2,pos2)
+      obj.maxLength=dump.maxLength
+      return obj
+    end
+  end
+  return nil
+end
+function tgl.dump.dumpToFile(obj,filename)
+  if type(obj)~="table" then return false end
+  if not obj.type then return false end
+end
+function tgl.dump.loadFromFile()
+end
+tgl.sys.resetActiveArea()
 tgl.util.log("TGL version "..tgl.ver.." loaded")
 
 return tgl
