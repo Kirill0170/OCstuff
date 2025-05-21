@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.02.1"
+tgl.ver="0.6.02.3"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -1005,6 +1005,7 @@ function tgl.dump.encodeObject(obj)
   local dump={}
   dump.type="Dump"
   dump.obj_type=obj.type
+  if obj.hidden then dump.hidden=obj.hidden end
   if obj.type=="Pos2" or obj.type=="Color2" or obj.type=="Size2" then
     return ser.serialize(obj)
   elseif tgl.sys.enableAllTypes[obj.type] then
@@ -1014,7 +1015,13 @@ function tgl.dump.encodeObject(obj)
     end
     dump.col2=tgl.dump.encodeObject(obj.col2)
     if obj.type=="Bar" then
-      --bar 
+      if obj.relpos2 then obj.pos2=obj.relpos2 end --reset
+      dump.pos2=tgl.dump.encodeObject(obj.pos2)
+      if obj.objectColor2 then dump.objectColor2=tgl.dump.encodeObject(obj.objectColor2) end
+      dump.centerMode=obj.centerMode
+      dump.sizeX=obj.sizeX
+      dump.space=obj.space
+      dump.centerMode=obj.centerMode
     else
       dump.size2=tgl.dump.encodeObject(obj.size2)
       if obj.type=="Frame" then
@@ -1028,11 +1035,23 @@ function tgl.dump.encodeObject(obj)
   elseif tgl.sys.enableTypes[obj.type] then
   else
     if obj.relpos2 then obj.pos2=obj.relpos2 end --reset
+    -- for bar
+    if obj.customX then dump.customX=obj.customX end
+    if obj.customCol2 then dump.customCol2=obj.customCol2 end
+
     dump.pos2=tgl.dump.encodeObject(obj.pos2)
     dump.col2=tgl.dump.encodeObject(obj.col2)
     if obj.type=="Text" then
       dump.text=obj.text
       dump.maxLength=obj.maxLength
+    elseif obj.type=="InputField" then
+
+    elseif obj.type=="MultiText" then
+
+    elseif obj.type=="Progressbar" then
+
+    elseif obj.type=="Button" then
+
     end
   end
   return ser.serialize(dump)
@@ -1053,6 +1072,16 @@ function tgl.dump.decodeObject(dump)
       obj.borders=dump.borders
       obj.borderType=dump.borderType
       return obj
+    elseif dump.obj_type=="Bar" then
+      local pos2=tgl.dump.decodeObject(dump.pos2)
+      local col2=tgl.dump.decodeObject(dump.col2)
+      local objcol2=nil
+      if dump.objectColor2 then objcol2=tgl.dump.decodeObject(dump.objectColor2) end
+      local obj=Bar:new(pos2,objects,col2,objcol2)
+      obj.space=dump.space
+      obj.sizeX=dump.sizeX
+      obj.centerMode=dump.centerMode
+      return obj
     end
     --big
   elseif tgl.sys.enableTypes[dump.obj_type] then
@@ -1070,8 +1099,21 @@ end
 function tgl.dump.dumpToFile(obj,filename)
   if type(obj)~="table" then return false end
   if not obj.type then return false end
+  local file=io.open(filename,"w")
+  if not file then return false end
+  local success,dump=pcall(tgl.dump.encodeObject,obj)
+  if not success then tgl.util.log("Couldn't dump an object: "..dump,"dump/toFile") return false end
+  file:write(dump):close()
+  return true
 end
-function tgl.dump.loadFromFile()
+function tgl.dump.loadFromFile(filename)
+  local file=io.open(filename)
+  if not file then return false end
+  local data=file:read("l")
+  if string.len(data)<2 then return false end
+  local success,obj=pcall(tgl.dump.decodeObject,data)
+  if not success then tgl.util.log("Couldn't decode an object: "..obj,"dump/loadFile") return false end
+  return obj
 end
 tgl.sys.resetActiveArea()
 tgl.util.log("TGL version "..tgl.ver.." loaded")
