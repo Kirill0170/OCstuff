@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.03.1"
+tgl.ver="0.6.04.2"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -1034,8 +1034,6 @@ function tgl.dump.encodeObject(obj)
         --scrollframe
       end
     end
-    --big
-  elseif tgl.sys.enableTypes[obj.type] then
   else
     if obj.relpos2 then obj.pos2=obj.relpos2 end --reset
     -- for bar
@@ -1066,7 +1064,10 @@ function tgl.dump.encodeObject(obj)
       dump.value=obj.value
     elseif obj.type=="Button" then
       --ugh
-      
+      dump.text=obj.text
+      dump.checkRendered=obj.checkRendered
+      if obj.functionName then dump.functionName=obj.functionName
+      else tgl.util.log("Button with no functionName - will be dumped as empty","dump/encodeObject") end
     elseif obj.type=="ScreenSave" then
       tgl.util.log("Unsupported object type for dumping: ScreenSave","dump/encodeObject")
       return nil
@@ -1102,8 +1103,6 @@ function tgl.dump.decodeObject(dump)
       obj.centerMode=dump.centerMode
       return obj
     end
-    --big
-  elseif tgl.sys.enableTypes[dump.obj_type] then
   else
     local pos2=tgl.dump.decodeObject(dump.pos2)
     local col2=tgl.dump.decodeObject(dump.col2)
@@ -1132,7 +1131,11 @@ function tgl.dump.decodeObject(dump)
       local obj=MultiText:new(objects,pos2)
       return obj
     elseif dump.obj_type=="Button" then
-    
+      local obj=Button:new(dump.text,function() end,pos2,col2)
+      obj.checkRendered=dump.checkRendered
+      obj.functionName=dump.functionName
+      --logic
+      return obj
     end
   end
   return nil
