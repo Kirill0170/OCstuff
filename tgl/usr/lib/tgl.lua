@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.02.3"
+tgl.ver="0.6.03.1"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -778,6 +778,7 @@ function ScreenSave:new(size2)
   local obj=setmetatable({},ScreenSave)
   obj.size2=size2
   obj.data={}
+  obj.type="ScreenSave"
   obj:save()
   return obj
 end
@@ -816,6 +817,7 @@ function ScreenSave:load(filename)
       local data=require("serialization").unserialize(file:read("*l"))
       if data then
         local obj=setmetatable({},ScreenSave)
+        obj.type="ScreenSave"
         obj.size2=load_size2
         obj.data=data
         return obj
@@ -1001,6 +1003,7 @@ end
 
 tgl.dump={}
 function tgl.dump.encodeObject(obj)
+  if not obj then return nil end
   local ser=require("serialization")
   local dump={}
   dump.type="Dump"
@@ -1045,18 +1048,34 @@ function tgl.dump.encodeObject(obj)
       dump.text=obj.text
       dump.maxLength=obj.maxLength
     elseif obj.type=="InputField" then
-
+      dump.text=obj.text
+      dump.defaultText=obj.text
+      dump.eventName=obj.eventName
+      dump.checkRendered=obj.checkRendered
+      dump.erase=obj.erase
+      dump.charCol2=tgl.dump.encodeObject(obj.charCol2)
     elseif obj.type=="MultiText" then
-
+      dump.objects={}
+      for name,obj2 in pairs(obj.objects) do
+        dump.objects[name]=tgl.dump.encodeObject(obj2)
+      end
+      dump.col2=nil
     elseif obj.type=="Progressbar" then
-
+      dump.len=obj.len
+      dump.text=obj.text
+      dump.value=obj.value
     elseif obj.type=="Button" then
-
+      --ugh
+      
+    elseif obj.type=="ScreenSave" then
+      tgl.util.log("Unsupported object type for dumping: ScreenSave","dump/encodeObject")
+      return nil
     end
   end
   return ser.serialize(dump)
 end
 function tgl.dump.decodeObject(dump)
+  if not dump then return nil end
   local ser=require("serialization")
   if type(dump)=="string" then dump=ser.unserialize(dump) end
   if dump.type=="Pos2" or dump.type=="Color2" or dump.type=="Size2" then
@@ -1092,6 +1111,28 @@ function tgl.dump.decodeObject(dump)
       local obj=Text:new(dump.text,col2,pos2)
       obj.maxLength=dump.maxLength
       return obj
+    elseif dump.obj_type=="InputField" then
+      local obj=InputField:new(dump.text,pos2,col2)
+      obj.defaultText=dump.text
+      obj.eventName=dump.eventName
+      obj.checkRendered=dump.checkRendered
+      obj.erase=dump.erase
+      obj.charCol2=tgl.dump.decodeObject(dump.charCol2)
+      return obj
+    elseif dump.obj_type=="Progressbar" then
+      local obj=Progressbar:new(pos2,dump.len,col2)
+      obj.value=dump.value
+      obj.text=dump.text
+      return obj
+    elseif dump.obj_type=="MultiText" then
+      local objects={}
+      for name,obj2 in pairs(dump.objects) do
+        objects[name]=tgl.dump.decodeObject(obj2)
+      end
+      local obj=MultiText:new(objects,pos2)
+      return obj
+    elseif dump.obj_type=="Button" then
+    
     end
   end
   return nil
