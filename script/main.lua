@@ -56,6 +56,9 @@ function lex(source)
     elseif string.sub(source,i,i+4)=="while" then
       table.insert(tokens, Token.new("T_WHILE", "while"))
       i=i+5
+    elseif string.sub(source,i,i+4)=="break" then
+      table.insert(tokens, Token.new("T_BREAK", "break"))
+      i=i+5
     elseif char == "{" then
       table.insert(tokens, Token.new("T_LBRACE", "{"))
       i = i + 1
@@ -97,6 +100,12 @@ function lex(source)
     elseif string.sub(source, i, i + 1) == "!=" then
       table.insert(tokens, Token.new("T_OPERATOR", "!="))
       i = i + 2
+    elseif string.sub(source, i, i + 1) == "//" then
+      table.insert(tokens, Token.new("T_OPERATOR", "//"))
+      i = i + 2
+    elseif char == "%" then
+      table.insert(tokens, Token.new("T_OPERATOR", "%"))
+      i = i + 1
     elseif char == "+" then
       table.insert(tokens, Token.new("T_OPERATOR", "+"))
       i = i + 1
@@ -207,7 +216,7 @@ AST.TableAccess = function(base, index)
 end
 
 AST.NullLiteral = function()
-  return { type = "NullLiteral" }
+  return { type = "NullLiteral"}
 end
 
 AST.FunctionDefinition = function(name, parameters, body)
@@ -224,6 +233,10 @@ end
 
 AST.WhileLoop = function(condition, body)
   return { type = "WhileLoop", condition = condition, body = body }
+end
+
+AST.Break = function()
+  return {type="Break"}
 end
 
 AST.ForLoop = function (variable,start,endValue,step,body)
@@ -307,8 +320,8 @@ function parse_primary()
             local index = parse_expression()
             consume("T_RSQUARE", "Expected ']' to close table index")
             return AST.TableAccess(identifier, index)
-        elseif match("T_LPAREN") then
-          return parse_function_call(identifier)
+        -- elseif match("T_LPAREN") then
+        --   return parse_function_call(identifier)
         else
             return identifier
         end
@@ -330,20 +343,23 @@ function parse_primary()
 end
   function parse_expression()
       local left = parse_primary()
-      while match("T_OPERATOR") or match("T_DOT") or match("T_LSQUARE") do
+      while match("T_OPERATOR") or match("T_DOT") or match("T_LSQUARE") or match("T_LPAREN") do
           if match("T_OPERATOR") then
-              local operator = next_token().value
-              local right = parse_primary()
-              left = AST.BinaryExpression(operator, left, right)
+            local operator = next_token().value
+            local right = parse_primary()
+            left = AST.BinaryExpression(operator, left, right)
            elseif match("T_LSQUARE") then
-              next_token() -- Consume the '['
-              local index = parse_expression()
-              consume("T_RSQUARE", "Expected ']' to close table index")
-              left =  AST.TableAccess(left, index)
+            next_token() -- Consume the '['
+            local index = parse_expression()
+            consume("T_RSQUARE", "Expected ']' to close table index")
+            left =  AST.TableAccess(left, index)
           elseif match("T_DOT") then
-              consume("T_DOT", "Expected '.'")
-              local property = consume("T_IDENTIFIER", "Expected identifier after '.'").value
-              left = AST.TableAccess(left, property) --Creates inline object
+            consume("T_DOT", "Expected '.'")
+            local property = consume("T_IDENTIFIER", "Expected identifier after '.'").value
+            left = AST.TableAccess(left, property) --Creates inline object
+          elseif match("T_LPAREN") then
+            print("parsing function?",left.name)
+            left=parse_function_call(left)
           end
       end
       return left
@@ -403,13 +419,13 @@ end
     end
     consume("T_OPERATOR", "Expected '=' in assignment")
     local value = parse_expression()
-    if match("T_LPAREN") then --function
-      next_token()
-      local args={parse_expression()} --no
-      while match("T_COMMA") do next_token() table.insert(args,parse_expression())end
-      consume("T_RPAREN","Expected ')' to close function call")
-      value=AST.FunctionCall(value,args)
-    end
+    -- if match("T_LPAREN") then --function
+    --   next_token()
+    --   local args={parse_expression()} --no
+    --   while match("T_COMMA") do next_token() table.insert(args,parse_expression())end
+    --   consume("T_RPAREN","Expected ')' to close function call")
+    --   value=AST.FunctionCall(value,args)
+    -- end
     -- consume("T_SEMICOLON", "Expected ';' after assignment")
     return AST.Assignment(target, value)
   end
@@ -439,13 +455,16 @@ end
       return parse_if_statement()
     elseif token.type == "T_IDENTIFIER" or token.type == "T_LSQUARE" then
       if tokens[i+1].type=="T_LPAREN" then
-        next_token()
-        return parse_function_call(token)
+        local ident=parse_primary()
+        return parse_function_call(ident)
       else
         return parse_assignment_statement()
       end
     elseif token.type == "T_WHILE" then
       return parse_while_loop()
+    elseif token.type == "T_BREAK" then
+      next_token()
+      return AST.Break()
     elseif token.type == "T_FOR" then
       return parse_for_loop()
     elseif token.type == "T_SEMICOLON" then
@@ -472,7 +491,7 @@ end
         until not (match("T_IDENTIFIER") or match("T_NUMBER") or  match("T_STRING") or match("T_BOOLEAN") )
     end
     consume("T_RPAREN", "Expected ')' after arguments")
-    return AST.FunctionCall(name.value, arguments)
+    return AST.FunctionCall(name.name, arguments)
   end
 
   function parse_return_statement()
@@ -566,36 +585,188 @@ function print_ast(node, indent)
                 print(indent .. "  " .. k .. ": " .. tostring(v))
             end
         end
-    end
+end
 
+function generate_env()
+  local env={}
+  --setup build-in functions
+  env["print"]=function(a)
+    print(table.unpack(a))
+  end
+  env["input"]=function()
+    return io.read()
+  end
+  return env
+end
+
+function create_interpreter()
+  local env = generate_env() -- the environment
+  local function evaluate(node)
+    if node.type=="Program" or node.type=="Block" then
+      for _,statement in pairs(node.statements) do
+        if evaluate(statement)=="Break" then
+          return "Break"
+        end
+      end
+    elseif node.type == "NumberLiteral" then
+      return node.value
+    elseif node.type == "BooleanLiteral" then
+      return node.value == true
+    elseif node.type == "StringLiteral" then
+      return node.value
+    elseif node.type == "NullLiteral" then
+      return nil
+    elseif node.type == "TableLiteral" then
+      local table={}
+      for key,elem in pairs(node.fields) do
+        table[key]=evaluate(elem)
+      end
+      return table
+    elseif node.type == "FunctionDefinition" then
+      env[node.name]=node --store function
+      return nil
+    elseif node.type == "FunctionCall" then
+      local func=env[node.name]
+      if type(func)=="function" then --system call
+        local args = {}
+        for _, argNode in ipairs(node.arguments) do
+          table.insert(args, evaluate(argNode))
+        end
+        local success,result=pcall(func,args)
+        if not success then
+          error("System call fail: "..result)
+        end
+        return result
+      end
+      if not func or func.type ~= "FunctionDefinition" then
+        error("Attempt to call undefined function '" .. tostring(node.name) .. "'")
+      end
+      local args = {}
+      for _, argNode in ipairs(node.arguments) do
+          table.insert(args, evaluate(argNode))
+      end
+      local oldEnv=env
+      for i,paramName in ipairs(func.parameters) do
+        env[paramName]=args[i] or nil
+      end
+      local result=nil
+      for _, statement in ipairs(func.body.statements) do
+        local stmtResult = evaluate(statement)
+        if statement.type=="ReturnStatement" then
+          result=stmtResult
+          break
+        end
+      end
+      env=oldEnv
+      return result
+    elseif node.type == "BinaryExpression" then
+      local left = evaluate(node.left)
+      local right = evaluate(node.right)
+      if node.operator == "+" then
+        return left + right
+      elseif node.operator == "-" then
+        return left - right
+      elseif node.operator == "*" then
+        return left * right
+      elseif node.operator == "/" then
+        return left / right
+      elseif node.operator == "==" then
+        return left == right
+      elseif node.operator == ">" then
+        return left > right
+      elseif node.operator == "<" then
+        return left < right
+      elseif node.operator == ">=" then
+        return left >= right
+      elseif node.operator ==" <=" then
+        return left <= right
+      elseif node.operator == "!=" then
+        return left ~= right
+      elseif node.operator == "//" then
+        return math.floor(left/right)
+      elseif node.operator == "%" then
+        return left%right
+      else
+        error("Unknown operator: " .. node.operator)
+      end
+    elseif node.type == "Identifier" then
+      return env[node.name]
+    elseif node.type == "TableAccess" then
+      return env[node.base.name][node.index.value]
+    elseif node.type == "Assignment" then
+      if node.target.type=="TableAccess" then
+        env[node.target.base.value][node.target.index.value]=evaluate(node.value)
+      elseif node.target.type=="Identifier" then
+        env[node.target.name] = evaluate(node.value)
+      end
+      return env[node.target.name]
+    elseif node.type == "ReturnStatement" then
+      return evaluate(node.expression)
+    elseif node.type == "IfStatement" then
+      if evaluate(node.condition)==true then
+        return evaluate(node.thenBlock)
+      elseif node.elseBlock then --elseifs?
+        return evaluate(node.elseBlock)
+      end
+    elseif node.type == "WhileLoop" then
+      if #node.body.statements==0 then
+        print("!warn! empty while loop")
+        return
+      end
+      while evaluate(node.condition)==true do
+        if evaluate(node.body)=="Break" then
+          break
+        end
+      end
+    elseif node.type == "ForLoop" then
+      env[node.variable]=node.start.value
+      if not node.step then node.step=AST.NumberLiteral(1) end
+      while env[node.variable]<=node.endValue.value do
+        if evaluate(node.body)=="Break" then
+          break
+        end
+        env[node.variable]=env[node.variable]+node.step.value
+      end
+    elseif node.type == "Break" then return "Break"
+    else
+      error("Unknown node type: " .. node.type)
+    end
+  end
+
+  return evaluate, env
+end
 
 -- Example Usage (assuming you have the lexer and Token defined)
 local source_code = [[
-//PageScript - scripting for webpages
-a=10;
-b=true;
-s="hello world";
-t={1,2,key="value"}
-function name(a,b){
-  if (b==true){
-    a=a+1;
-  } else {
-    a=a-1;
+function a(){
+  function b(){
+    return 1
   }
-  return a;
+  return b()
 }
-while(b){print(c);}
-for(i=1,3,2){print(i);}
+print(a())
 ]]
-
-
+local start_time=os.clock()
 local tokens = lex(source_code)
 for _, token in ipairs(tokens) do
   print(token)
 end
-
 local ast = parse(tokens)
-
--- Print the AST (for debugging) - Replace with your AST printing function
-
 print_ast(ast)
+local eval,env=create_interpreter()
+print("---Time: "..tostring((os.clock()-start_time)*1000).."ms")
+print("---Program Output----")
+eval(ast)
+print("---------------------")
+print(env["a"])
+
+--[[
+TODO
+fix table access
++=
+custom env
+m.functions
+include(modName)
+more system functions(main,string,table etc)
+web3 libs
+]]
