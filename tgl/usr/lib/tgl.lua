@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.04.2"
+tgl.ver="0.6.05"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -95,7 +95,7 @@ end
 function tgl.util.log(text,mod)
   if tgl.debug then
     local c=require("component")
-    if c.ocelot then
+    if c.isAvailable("ocelot") then
       if not mod then mod="MAIN" end
       c.ocelot.log("["..require("computer").uptime().."][TGL]["..mod.."] "..text)
     end
@@ -155,6 +155,36 @@ function tgl.util.objectInfo(object)
   " "..object.size2.sizeX.." "..object.size2.sizeY..")","util/objectInfo") end
   if object.type=="Text" or object.type=="Button" or object.type=="InputField" then tgl.util.log("Text: "..object.text,"util/objectInfo") end
   if object.objects then tgl.util.log("Contains objects","util/objectInfo") end
+end
+
+function tgl.util.setProperties(obj,args)
+  if type(obj)~="table" or type(args)~="table" then
+    return obj
+  end
+  for key,value in pairs(args) do
+    obj.key=value
+  end
+  return obj
+end
+
+function tgl.util.getProperties(obj)
+  local res={}
+  local ignored={
+    objects=true,
+    pos2=true, size2=true,
+    relpos2=true, type=true,
+    x1=true, x2=true,
+    y1=true, y2=true,
+    pos1=true, len=true,
+    handler=true,
+    onClick=true,
+    hidden=true,
+    callback=true,
+  }
+  for key,value in pairs(obj) do
+    if not ignored[key] then res.key=value end
+  end
+  return res
 end
 
 Color2={}
