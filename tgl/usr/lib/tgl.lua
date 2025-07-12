@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.05"
+tgl.ver="0.6.06"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -81,13 +81,13 @@ function tgl.sys.resetActiveArea()
   tgl.sys.activeArea=Size2:newFromSize(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY)
 end
 
-function tgl.util.pos2InSize2(size2,pos2)
+function tgl.util.pos2InSize2(pos2,size2)
   if size2.type~="Size2" or pos2.type~="Pos2" then return false end
   if pos2.x>=size2.x1 and pos2.x<=size2.x2 and
      pos2.y>=size2.y1 and pos2.y<=size2.y2 then return true
   else return false end
 end
-function tgl.util.pointInSize2(size2,x,y)
+function tgl.util.pointInSize2(x,y,size2)
   if size2.type~="Size2" or type(x)~="number" or type(y)~="number" then return false end
   if x>=size2.x1 and x<=size2.x2 and y>=size2.y1 and y<= size2.y2 then return true 
   else return false end
@@ -149,25 +149,70 @@ function tgl.util.strgen(char,num)
 end
 
 function tgl.util.objectInfo(object)
+  if not object then tgl.util.log("Nil object","util/objectInfo") return end
+  if type(object)~="table" then tgl.util.log("Non-table object: "..tostring(object),"util/objectInfo") return end
   tgl.util.log("Object type: "..object.type,"util/objectInfo")
   if object.pos2 then tgl.util.log("Linear: Pos2("..object.pos2.x.." "..object.pos2.y..")","util/objectInfo") end
   if object.size2 then tgl.util.log("2-D: Size2("..object.size.pos1.x.." "..object.size2.pos1.y..
-  " "..object.size2.sizeX.." "..object.size2.sizeY..")","util/objectInfo") end
+  " "..object.size2.sizeX.."x"..object.size2.sizeY..")","util/objectInfo") end
   if object.type=="Text" or object.type=="Button" or object.type=="InputField" then tgl.util.log("Text: "..object.text,"util/objectInfo") end
   if object.objects then tgl.util.log("Contains objects","util/objectInfo") end
 end
 
+function tgl.createObject(obj_type,properties)
+  if type(obj_type)~="string" then
+    tgl.util.log("Tried to create object with '"..tostring(obj_type).."' type","main/createObject")
+    return nil
+  end
+  local new_obj=nil
+  if obj_type=="Text" then new_obj=Text:new()
+  elseif obj_type=="MultiText" then new_obj=MultiText:new()
+  elseif obj_type=="Button" then new_obj=Button:new()
+  elseif obj_type=="Bar" then new_obj=Bar:new()
+  elseif obj_type=="Progressbar" then new_obj=Progressbar:new()
+  elseif obj_type=="Frame" then new_obj=Frame:new()
+  elseif obj_type=="Pos2" then new_obj=Pos2:new()
+  elseif obj_type=="Color2" then new_obj=Color2:new()
+  elseif obj_type=="Size2" then new_obj=Size2:new()
+  elseif obj_type=="InputField" then new_obj=InputField:new()
+  else tgl.util.log("Unknown type of object: "..obj_type,"main/createObject")
+  end
+  if type(properties)=="table" then
+    new_obj=tgl.util.setProperties(new_obj,properties)
+  end
+  return new_obj
+end
+
 function tgl.util.setProperties(obj,args)
   if type(obj)~="table" or type(args)~="table" then
+    tgl.util.log("Invalid parameters","util/setProperties")
     return obj
   end
   for key,value in pairs(args) do
-    obj.key=value
+    if key=="objects" and type(value)=="table" then
+      for obj_name,props in pairs(value) do
+        if type(props)=="table" then
+          local new_obj=tgl.createObject(props.type,props)
+          if new_obj then
+            obj[key][obj_name]=new_obj
+          else
+            tgl.util.log("Couldn't create object during setting properties!","util/setProperties")
+          end
+        end
+      end
+    else
+      obj[key]=value
+    end
   end
   return obj
 end
+--[[example Frame object
+Frame:new({Text:new("Hello",nil,Pos2:new(2,2))},Size2:new(2,2,10,10),Color2:new(0,0xFFFFFF))
+tgl.createObject("Frame",{type="Frame",size2=Size2:new(2,2,10,10),col2=Color2:new(0,0xFFFFFF),objects={{type="Text",text="Hello",pos2=Pos2:new(2,2)}}})
+]]
 
-function tgl.util.getProperties(obj)
+function tgl.util.getProperties(obj,ignore)
+  if ignore==nil then ignore=true end
   local res={}
   local ignored={
     objects=true,
@@ -182,7 +227,11 @@ function tgl.util.getProperties(obj)
     callback=true,
   }
   for key,value in pairs(obj) do
-    if not ignored[key] then res.key=value end
+    if ignore then
+      if not ignored[key] then res[key]=value end
+    else
+      res[key]=value
+    end
   end
   return res
 end
@@ -418,7 +467,7 @@ function Button:new(text,callback,pos2,color2)
     if x>=obj.pos2.x
     and x<obj.pos2.x+unicode.wlen(obj.text)
     and y==obj.pos2.y
-    and tgl.util.pointInSize2(tgl.sys.activeArea,x,y) then
+    and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
       if obj.checkRendered then
         if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.wlen(obj.text)<0.6 then
           return
@@ -476,7 +525,7 @@ function InputField:new(text,pos2,col2)
     local textLen=unicode.wlen(obj.text)
     if textLen==0 then textLen=unicode.wlen(obj.defaultText) end
     if x>=obj.pos2.x and x<obj.pos2.x+textLen and y==obj.pos2.y
-    and tgl.util.pointInSize2(tgl.sys.activeArea,x,y) then
+    and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
       if obj.checkRendered then
         if unicode.wlen(obj.text)>0 then
           if tgl.util.getLineMatched(obj.pos2,obj.text)/textLen<1.0 then
@@ -1189,9 +1238,9 @@ function tgl.dump.loadFromFile(filename)
   if not success then tgl.util.log("Couldn't decode an object: "..obj,"dump/loadFile") return false end
   return obj
 end
+
 tgl.sys.resetActiveArea()
 tgl.util.log("TGL version "..tgl.ver.." loaded")
-
 return tgl
 --types of objects
 --[[
