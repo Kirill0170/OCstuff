@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.07"
+tgl.ver="0.6.08"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -61,7 +61,7 @@ tgl.defaults.keys.ctrlc=3
 tgl.defaults.keys.esc=27
 
 tgl.sys={}
-tgl.sys.enableTypes={Button=true,InputField=true,ScrollFrame=true}
+tgl.sys.enableTypes={Button=true,EventButton=true,CheckBox=true,InputField=true,ScrollFrame=true}
 tgl.sys.enableAllTypes={Frame=true,Bar=true,ScrollFrame=true}
 tgl.sys.openTypes={Frame=true,ScrollFrame=true}
 
@@ -170,6 +170,8 @@ function tgl.createObject(obj_type,properties)
   if obj_type=="Text" then new_obj=Text:new()
   elseif obj_type=="MultiText" then new_obj=MultiText:new()
   elseif obj_type=="Button" then new_obj=Button:new()
+  elseif obj_type=="EventButton" then new_obj=EventButton:new()
+  elseif obj_type=="CheckBox" then new_obj=CheckBox:new()
   elseif obj_type=="Bar" then new_obj=Bar:new()
   elseif obj_type=="Progressbar" then new_obj=Progressbar:new()
   elseif obj_type=="Frame" then new_obj=Frame:new()
@@ -508,6 +510,111 @@ function Button:render()
   local prev=tgl.changeToColor2(self.col2)
   gpu.set(self.pos2.x,self.pos2.y,self.text)
   tgl.changeToColor2(prev,true)
+end
+
+EventButton={}
+EventButton.__index=EventButton
+function EventButton:new(text,eventName,pos2,col2)
+  local obj=setmetatable({},EventButton)
+  obj.type="EventButton"
+  obj.text=text or "[EventButton]"
+  obj.eventName=eventName or "newEvent"
+  obj.pos2=pos2 or Pos2:new()
+  obj.col2=col2 or Color2:new()
+  obj.handler=function(_,_,x,y)
+    if x>=obj.pos2.x
+    and x<obj.pos2.x+unicode.wlen(obj.text)
+    and y==obj.pos2.y
+    and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
+      if obj.checkRendered then
+        if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.wlen(obj.text)<0.6 then
+          return
+        end
+      end
+      if type(obj.onClick)=="function" then
+        thread.create(obj.onClick):detach()
+      end
+      event.push(eventName)
+    end
+  end
+  obj.onClick=function()
+    obj:disable()
+    local invert=Color2:new(obj.col2[2],obj.col2[1])
+    local prev=obj.col2
+    obj.col2=invert
+    obj:render()
+    obj.col2=prev
+    os.sleep(0.5)
+    obj:render()
+    obj:enable()
+  end
+  return obj
+end
+function EventButton:enable()
+  event.listen("touch",self.handler)
+end
+function EventButton:disable()
+  event.ignore("touch",self.handler)
+end
+function EventButton:render()
+  if self.hidden then return false end
+  local prev=tgl.changeToColor2(self.col2)
+  gpu.set(self.pos2.x,self.pos2.y,self.text)
+  tgl.changeToColor2(prev,true)
+end
+
+CheckBox={}
+CheckBox.__index=CheckBox
+function CheckBox:new(pos2,col2,width,char)
+  local obj=setmetatable({},CheckBox)
+  obj.type="CheckBox"
+  obj.pos2=pos2 or Pos2:new()
+  obj.col2=col2 or Color2:new()
+  obj.char=char or "*"
+  obj.value=false
+  obj.width=width or 1
+  obj.text=tgl.util.strgen(" ",1)
+  obj.handler=function(_,_,x,y)
+    if x>=obj.pos2.x
+    and x<obj.pos2.x+unicode.wlen(obj.text)
+    and y==obj.pos2.y
+    and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
+      if obj.checkRendered then
+        if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.wlen(obj.text)<0.6 then
+          return
+        end
+      end
+      obj:toggle()
+    end
+  end
+  return obj
+end
+function CheckBox:enable()
+  event.listen("touch",self.handler)
+end
+function CheckBox:disable()
+  event.ignore("touch",self.handler)
+end
+function CheckBox:render()
+  if self.hidden then return false end
+  local prev=tgl.changeToColor2(self.col2)
+  gpu.set(self.pos2.x,self.pos2.y,self.text)
+  tgl.changeToColor2(prev,true)
+end
+function CheckBox:toggle()
+  self:disable()
+  if self.value==true then
+    self.value=false
+    self.text=tgl.util.strgen(" ",self.width)
+  else
+    self.value=true
+    local size=math.floor((self.width-unicode.wlen(self.char))/2)
+    local size2=math.ceil((self.width-unicode.wlen(self.char))/2)
+    self.text=tgl.util.strgen(" ",size)..self.char..tgl.util.strgen(" ",size2)
+  end
+  self:render()
+  os.sleep(.5)
+  self:enable()
 end
 
 InputField={}
@@ -1043,7 +1150,7 @@ function tgl.defaults.window(size2,title,barcol,framecol)
   if not title then title="Untitled" end
   if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
   if not framecol then framecol=tgl.defaults.colors2.white end
-  local close_button=Button:new(" X ",function() event.push("close"..title) end,Pos2:new(),tgl.defaults.colors2.close)
+  local close_button=EventButton:new(" X ","close"..title,Pos2:new(),tgl.defaults.colors2.close)
   close_button.customCol2=true
   close_button.customX=size2.sizeX-2
   local title_text=Text:new(title,barcol)
@@ -1058,7 +1165,7 @@ function tgl.defaults.window_outlined(size2,title,borders,barcol,framecol)
   if not borders then borders=tgl.defaults.boxes.signle end
   if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
   if not framecol then framecol=tgl.defaults.colors2.white end
-  local close_button=Button:new(" X ",function() event.push("close"..title) end,Pos2:new(),tgl.defaults.colors2.close)
+  local close_button=EventButton:new(" X ","close"..title,Pos2:new(),tgl.defaults.colors2.close)
   close_button.customCol2=true
   close_button.customX=size2.sizeX-2
   local title_text=Text:new(title,barcol)
@@ -1073,7 +1180,7 @@ function tgl.defaults.notificationWindow(size2,title,text,barcol,framecol)
   if not title then title="Untitled" end
   if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
   if not framecol then framecol=tgl.defaults.colors2.white end
-  local close_button=Button:new(" OK ",function() event.push("close"..title) end,Pos2:new((size2.sizeX-4)/2,size2.sizeY-1),Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue))
+  local close_button=EventButton:new(" OK ","close"..title,Pos2:new((size2.sizeX-4)/2,size2.sizeY-1),Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue))
   local info_icon=Text:new("i",Color2:new(0xFFFFFF,tgl.defaults.colors16.darkblue),Pos2:new((size2.sizeX-unicode.wlen(text))/2-2,3))
   local text_label=Text:new(text,framecol,Pos2:new((size2.sizeX-unicode.wlen(text))/2,3))
   local title_text=Text:new(title,barcol)
