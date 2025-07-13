@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.06"
+tgl.ver="0.6.07"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -152,9 +152,11 @@ function tgl.util.objectInfo(object)
   if not object then tgl.util.log("Nil object","util/objectInfo") return end
   if type(object)~="table" then tgl.util.log("Non-table object: "..tostring(object),"util/objectInfo") return end
   tgl.util.log("Object type: "..object.type,"util/objectInfo")
-  if object.pos2 then tgl.util.log("Linear: Pos2("..object.pos2.x.." "..object.pos2.y..")","util/objectInfo") end
-  if object.size2 then tgl.util.log("2-D: Size2("..object.size.pos1.x.." "..object.size2.pos1.y..
-  " "..object.size2.sizeX.."x"..object.size2.sizeY..")","util/objectInfo") end
+  if object.type=="Pos2" then tgl.util.log("Linear: Pos2("..object.x.." "..object.y..")","util/objectInfo") end
+  if object.type=="Size2" then tgl.util.log("2-D: Size2("..object.pos1.x.." "..object.pos1.y..
+  " "..object.sizeX.."x"..object.sizeY..")","util/objectInfo") end
+  if object.pos2 and object.type~="Size2" then tgl.util.objectInfo(object.pos2) end
+  if object.size2 then tgl.util.objectInfo(object.size2) end
   if object.type=="Text" or object.type=="Button" or object.type=="InputField" then tgl.util.log("Text: "..object.text,"util/objectInfo") end
   if object.objects then tgl.util.log("Contains objects","util/objectInfo") end
 end
@@ -717,7 +719,7 @@ function Frame:new(objects,size2,col2)
   obj:translate()
   return obj
 end
-function Frame:translate() --change to size2
+function Frame:translate() --move object from relative positions to absolute ones in frame
   for _,object in pairs(self.objects) do
     if object.type then
       if object.type~="Frame" and object.type~="ScrollFrame" then
@@ -735,10 +737,11 @@ function Frame:translate() --change to size2
           tgl.util.log("Corrupted object! Type: "..tostring(object.type),"Frame/translate")
         end
       else
-        if not object.relsize2 then object.relsize2=object.size2 end
-        local t_pos2=object.size2.pos1
+        if not object.relsize2 then object.relsize2=Size2:newFromPos2(object.size2.pos1,object.size2.pos2) end
+        local t_pos2=object.relsize2.pos1
         if t_pos2 then
           object.size2:moveToPos2(Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1))
+          object:translate() --test
         else
           tgl.util.log("Corrupted frame!","Frame/translate")
         end
