@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.08"
+tgl.ver="0.6.08.2"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -418,6 +418,8 @@ function Text:render(noNextLine)
 end
 function Text:updateText(text)
   if type(text)=="string" or type(text)=="number" then
+    self.text=tgl.util.strgen(" ",unicode.wlen(self.text))
+    self:render()
     self.text=text
     self:render()
   end
@@ -493,7 +495,7 @@ function Button:new(text,callback,pos2,color2)
     obj.col2=invert
     obj:render()
     obj.col2=prev
-    os.sleep(0.5)
+    os.sleep(.1)
     obj:render()
     obj:enable()
   end
@@ -534,7 +536,7 @@ function EventButton:new(text,eventName,pos2,col2)
       if type(obj.onClick)=="function" then
         thread.create(obj.onClick):detach()
       end
-      event.push(eventName)
+      event.push(obj.eventName)
     end
   end
   obj.onClick=function()
@@ -544,7 +546,7 @@ function EventButton:new(text,eventName,pos2,col2)
     obj.col2=invert
     obj:render()
     obj.col2=prev
-    os.sleep(0.5)
+    os.sleep(.1)
     obj:render()
     obj:enable()
   end
@@ -623,6 +625,7 @@ function InputField:new(text,pos2,col2)
   local obj=setmetatable({},InputField)
   obj.type="InputField"
   obj.text=""
+  obj.secret=false
   obj.defaultText=text or "[______]"
   obj.pos2=pos2 or Pos2:new()
   obj.col2=col2 or Color2:new()
@@ -660,7 +663,7 @@ function InputField:input()
   local prev=tgl.changeToPos2(self.pos2)
   local prevCol=tgl.changeToColor2(self.col2)
   local printChar=Text:new(" ",self.charCol2)
-  tgl.sys.setActiveArea(Size2:new(self.pos2.x,self.pos2.y,self.pos2.x+unicode.wlen(self.defaultText)-1,self.pos2.y))
+  tgl.sys.setActiveArea(Size2:newFromPos2(self.pos2,Pos2:new(self.pos2.x+unicode.wlen(self.text),self.pos2.y)))
   local offsetX=0
   if self.erase then
     if self.text=="" then gpu.fill(self.pos2.x,self.pos2.y,unicode.wlen(self.defaultText)+1,1," ")
@@ -708,7 +711,13 @@ function InputField:render()
   if self.hidden then return false end
   local prev=tgl.changeToColor2(self.col2)
   if self.text=="" then gpu.set(self.pos2.x,self.pos2.y,self.defaultText)
-  else gpu.set(self.pos2.x,self.pos2.y,self.text) end
+  else
+    if not self.secret then
+      gpu.set(self.pos2.x,self.pos2.y,self.text)
+    else
+      gpu.set(self.pos2.x,self.pos2.y,tgl.util.strgen("*",unicode.wlen(self.text)))
+    end
+  end
   tgl.changeToColor2(prev,true)
 end
 function InputField:enable()
@@ -1016,12 +1025,16 @@ function ScreenSave:load(filename)
   return nil
 end
 
-function Frame:open()
+function Frame:open(ignore_ss)
   self.hidden=false
-  local ss=ScreenSave:new(self.size2)
+  if not ignore_ss then self.ss=ScreenSave:new(self.size2) end
+  for _,object in pairs(self.objects) do
+    if object.type then
+      if tgl.sys.openTypes[object.type] and not object.ignoreOpen then object:open() end
+    end
+  end
   self:render()
   self:enableAll()
-  self.ss=ss
 end
 function Frame:close()
   self.hidden=true
