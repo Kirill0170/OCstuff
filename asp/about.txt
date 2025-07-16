@@ -1,0 +1,8 @@
+ASP advanced site protocol
+
+website page: .txt or .tp
+
+.tp: TGL Page
+has tgl object: page.frame
+browser loads file in sandbox mode
+server: django-like

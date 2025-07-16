@@ -1,0 +1,11 @@
+client: asp://example.com/home/index.tp?login=true
+<mnp find example.com>
+c->s {"get",{login=true},"home/index.tp"}
+server: gets file at /server/pages/home/index.tp
+c<-s {"response",{code=200,ftp=true},"OK"}
+<ftp client get>
+client: loads sandboxed page
+client: press send button: asp.post("/home/index.tp",,{str="hello!"})
+c->s {"post",{},{str="hello"}}
+c<-s {"redirect",{ftp=true},"/home/answer.tp"}
+<ftp client get>
